@@ -32,7 +32,9 @@ Usage:
 1. Type `labelCloud`
 2. Set up folder in `File -> Set point cloud folder`
 3. Set label folder in `File -> Set label folder`
-4. Start labelling points
-5. Press `ctrl + s` to save labels (.json + .bin file)
-6. Press `Assign` button to assign labels to points? or done with `ctrl + s` already?
+4. Start labelling points by clicking on `Pick sphere`
+5. When happy with the sphere, assign it to the class and press `Assign label`
+6. Repeat steps 4 and 5 for all leafs you want to label
+7. Press `ctrl + s` to save labels (.json + .bin file)
+8. Press `Next >>` to go to the next point cloud
 
