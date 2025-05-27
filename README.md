@@ -3,10 +3,9 @@
 
 ## Data
 
-### Key point labelling in point clouds
+### Key point labelling in point clouds (old, use [labelCloud](#using-my-fork-of-labelcloud) instead)
 `point_cloud_labeler.py` is a script that allows you to label point clouds. It uses Open3D for visualization and PyQt5 for the GUI. The script loads a point cloud from a .ply file, displays it, and allows you to label points by clicking on them. The labels are saved in a .json file.
 
-Environment (old):
 ```bash
 conda create -n point-cloud-labeler python
 conda activate point-cloud-labeler
