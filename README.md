@@ -10,7 +10,7 @@
 conda create -n point-cloud-labeler python==3.12
 conda activate point-cloud-labeler
 conda install -c conda-forge gcc gxx # For X forwarding open3d window with XLaunch
-pip install numpy open3d pandas
+pip install numpy open3d pandas networkx
 ```
 Usage:
 ```bash
