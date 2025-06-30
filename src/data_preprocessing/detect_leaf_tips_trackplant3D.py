@@ -234,7 +234,9 @@ def process_single_plant(
         )
 
     # Extract keypoints for all leaves
-    keypoints_data = process_plant_keypoints(points, labels.flatten(), visualize=True)
+    keypoints_data = process_plant_keypoints(
+        points, labels.flatten(), visualize=visualize
+    )
 
     # Print summary
     print(f"\nKeypoints extracted for {len(keypoints_data)} leaves:")
@@ -324,7 +326,10 @@ def save_keypoints_labelcloud_format(
 
 
 def process_all_plants(
-    crop: str = "sorghum", visualize: bool = True, save_labelcloud_format: bool = False
+    crop: str = "sorghum",
+    visualize: bool = True,
+    save_keypoints: bool = True,
+    save_labelcloud_format: bool = False,
 ):
     data_folder = Path(f"data/TrackPlant3D/gt/{crop}").resolve()
     file_paths = sorted(data_folder.glob("*"), key=lambda x: int(x.stem.split("_")[0]))
@@ -339,7 +344,7 @@ def process_all_plants(
             file_path,
             output_folder=output_folder,
             visualize=visualize,
-            save_keypoints=True,
+            save_keypoints=save_keypoints,
             save_labelcloud_format=save_labelcloud_format,
         )
 
@@ -348,7 +353,9 @@ def main():
     # Process all plants and save keypoints as points and as spheres (for verification in labelCloud)
     crop = "maize"
     print(f"Processing all plants for crop: {crop}")
-    process_all_plants(crop=crop, visualize=True, save_labelcloud_format=True)
+    process_all_plants(
+        crop=crop, visualize=True, save_keypoints=True, save_labelcloud_format=True
+    )
 
 
 if __name__ == "__main__":
