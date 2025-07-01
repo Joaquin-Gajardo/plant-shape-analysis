@@ -2,13 +2,10 @@ import json
 from pathlib import Path
 from typing import Optional
 
-import matplotlib.pyplot as plt
 import numpy as np
 import open3d as o3d
-import pandas as pd
-import plotly.graph_objects as go
 import pymeshlab
-from sklearn.neighbors import NearestNeighbors
+from leaf_meshing import mesh_leaf
 
 STEM_LABEL = 0  # Label for stem points in the point cloud
 COLOR_MAP = {
@@ -33,7 +30,10 @@ def load_point_cloud_from_txt(file_path: Path | str) -> tuple[np.ndarray, np.nda
 
 
 def extract_leaf_keypoints(
-    leaf_points: np.ndarray, stem_points: np.ndarray
+    leaf_points: np.ndarray,
+    stem_points: np.ndarray,
+    meshing_method: str = "ball_pivoting",
+    meshing_backend: str = "open3d",
 ) -> tuple[np.ndarray, np.ndarray, int, int]:
     """
     Extract insertion point and tip point for a leaf using geodesic distance.
@@ -49,10 +49,21 @@ def extract_leaf_keypoints(
         tip_index: index of tip point in leaf_points
     """
     # Create mesh for geodesic distance computation
+    _, mesh = mesh_leaf(
+        leaf_points, method=meshing_method, backend=meshing_backend, visualize=False
+    )
+    points = np.asarray(mesh.vertices)
+    faces = np.asarray(mesh.triangles)
+    normals = np.asarray(mesh.vertex_normals)
+
+    # Transform into PyMeshLab format
     ms = pymeshlab.MeshSet()
-    mesh = pymeshlab.Mesh(vertex_matrix=leaf_points)
+    mesh = pymeshlab.Mesh(
+        vertex_matrix=points, face_matrix=faces, v_normals_matrix=normals
+    )
     ms.add_mesh(mesh, "leaf")
-    ms.generate_surface_reconstruction_ball_pivoting()
+
+    visualize_mesh_open3d(ms, f"Leaf Mesh")
 
     # Find leaf centroid
     centroid = np.mean(leaf_points, axis=0)
@@ -92,6 +103,46 @@ def extract_leaf_keypoints(
     tip_index = indices[tip_idx]
 
     return insertion_point, tip_point, insertion_index, tip_index
+
+
+def visualize_mesh_open3d(
+    ms: pymeshlab.MeshSet, window_name: str = "Mesh Visualization"
+):
+    """
+    Visualize a PyMeshLab mesh using Open3D
+
+    Args:
+        ms: PyMeshLab MeshSet containing the mesh
+        window_name: Name for the visualization window
+    """
+    # Get the current mesh from MeshSet
+    mesh = ms.current_mesh()
+
+    # Extract vertices and faces
+    vertices = mesh.vertex_matrix()
+    faces = mesh.face_matrix()
+
+    # Create Open3D mesh
+    o3d_mesh = o3d.geometry.TriangleMesh()
+    o3d_mesh.vertices = o3d.utility.Vector3dVector(vertices)
+    o3d_mesh.triangles = o3d.utility.Vector3iVector(faces)
+
+    # Compute normals for better visualization
+    o3d_mesh.compute_vertex_normals()
+    # Convert normals to colors (normal mapping visualization)
+    normals = np.asarray(o3d_mesh.vertex_normals)
+
+    # Map normals from [-1, 1] to [0, 1] for RGB values
+    # This creates the typical blue-green normal map appearance
+    colors = (normals + 1.0) / 2.0
+
+    # Apply the colors to the mesh
+    o3d_mesh.vertex_colors = o3d.utility.Vector3dVector(colors)
+
+    # Visualize
+    o3d.visualization.draw_geometries(
+        [o3d_mesh], window_name=window_name, mesh_show_back_face=True
+    )
 
 
 def process_plant_keypoints(
