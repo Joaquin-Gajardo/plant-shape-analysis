@@ -1,3 +1,4 @@
 data
 .labelCloud.log
 config.ini
+__pycache__

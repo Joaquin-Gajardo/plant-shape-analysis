@@ -20,11 +20,21 @@ COLOR_MAP = {
     8: np.array([0.5, 1.0, 0.0]),  # Lime (Light Green)
     9: np.array([1.0, 0.75, 0.8]),  # Pink
 }
+DEFAULTS = {
+    "meshing_method": "ball_pivoting",  # Default meshing method, options: "ball_pivoting", "poisson"
+    "meshing_backend": "open3d",  # Default backend for meshing, options: "open3d", "pymeshlab"
+    "visualize": False,  # Whether to visualize the meshes and keypoints
+    "save_keypoints": True,  # Whether to save extracted keypoints
+    "save_labelcloud_format": True,  # Whether to save keypoints in labelCloud format
+    "sphere_radius": 0.5,  # Radius for spheres in labelCloud format
+}
 
 
 def load_point_cloud_from_txt(file_path: Path | str) -> tuple[np.ndarray, np.ndarray]:
-    # Function to load point cloud data from a text file
-    # Assuming the text file has columns: x, y, z, label
+    """
+    Function to load point cloud data from a text file.
+    Assuming the text file has columns: x, y, z, label
+    """
     data = np.loadtxt(file_path)
     return data[:, :3], data[:, 3:]  # Assuming last columns are labels
 
@@ -32,8 +42,9 @@ def load_point_cloud_from_txt(file_path: Path | str) -> tuple[np.ndarray, np.nda
 def extract_leaf_keypoints(
     leaf_points: np.ndarray,
     stem_points: np.ndarray,
-    meshing_method: str = "ball_pivoting",
-    meshing_backend: str = "open3d",
+    meshing_method: str = DEFAULTS["meshing_method"],
+    meshing_backend: str = DEFAULTS["meshing_backend"],
+    visualize: bool = DEFAULTS["visualize"],
 ) -> tuple[np.ndarray, np.ndarray, int, int]:
     """
     Extract insertion point and tip point for a leaf using geodesic distance.
@@ -63,7 +74,8 @@ def extract_leaf_keypoints(
     )
     ms.add_mesh(mesh, "leaf")
 
-    visualize_mesh_open3d(ms, f"Leaf Mesh")
+    if visualize:
+        visualize_mesh_open3d(ms, f"Leaf Mesh")
 
     # Find leaf centroid
     centroid = np.mean(leaf_points, axis=0)
@@ -146,7 +158,11 @@ def visualize_mesh_open3d(
 
 
 def process_plant_keypoints(
-    points: np.ndarray, labels: np.ndarray, visualize: bool = True
+    points: np.ndarray,
+    labels: np.ndarray,
+    meshing_method: str = DEFAULTS["meshing_method"],
+    meshing_backend: str = DEFAULTS["meshing_backend"],
+    visualize: bool = DEFAULTS["visualize"],
 ) -> dict:
     """
     Process all leaves in a plant to extract keypoints
@@ -179,7 +195,9 @@ def process_plant_keypoints(
         try:
             # Extract keypoints
             insertion_point, tip_point, insertion_index, tip_index = (
-                extract_leaf_keypoints(leaf_points, stem_points)
+                extract_leaf_keypoints(
+                    leaf_points, stem_points, meshing_method, meshing_backend, visualize
+                )
             )
 
             keypoints_data[int(leaf_id)] = {
@@ -268,9 +286,11 @@ def visualize_plant_open3d(
 def process_single_plant(
     file_path: Path,
     output_folder: Path,
-    visualize: bool = True,
-    save_keypoints: bool = False,
-    save_labelcloud_format: bool = False,
+    meshing_method: str = DEFAULTS["meshing_method"],
+    meshing_backend: str = DEFAULTS["meshing_backend"],
+    visualize: bool = DEFAULTS["visualize"],
+    save_keypoints: bool = DEFAULTS,
+    save_labelcloud_format: bool = DEFAULTS["save_labelcloud_format"],
 ):
 
     print(f"\nProcessing: {file_path.name}")
@@ -286,7 +306,11 @@ def process_single_plant(
 
     # Extract keypoints for all leaves
     keypoints_data = process_plant_keypoints(
-        points, labels.flatten(), visualize=visualize
+        points,
+        labels.flatten(),
+        meshing_method=meshing_method,
+        meshing_backend=meshing_backend,
+        visualize=visualize,
     )
 
     # Print summary
@@ -326,11 +350,11 @@ def save_keypoints_labelcloud_format(
     keypoints_data: dict,
     file_path: Path,
     output_folder: Path,
-    sphere_radius: float = 0.5,
+    sphere_radius: float = DEFAULTS["sphere_radius"],
     round_decimals: int = 6,
 ):
     """
-    Save keypoints in labelCloud format with spheres for insertion and tip points.
+    Save keypoints as spheres in json format for inspection and manual editing in labelCloud.
 
     Args:
         keypoints_data: dict - keypoint information for each leaf
@@ -378,22 +402,31 @@ def save_keypoints_labelcloud_format(
 
 def process_all_plants(
     crop: str = "sorghum",
-    visualize: bool = True,
-    save_keypoints: bool = True,
-    save_labelcloud_format: bool = False,
+    visualize: bool = DEFAULTS["visualize"],
+    meshing_method: str = DEFAULTS["meshing_method"],
+    meshing_backend: str = DEFAULTS["meshing_backend"],
+    save_keypoints: bool = DEFAULTS["save_keypoints"],
+    save_labelcloud_format: bool = DEFAULTS["save_labelcloud_format"],
 ):
     data_folder = Path(f"data/TrackPlant3D/gt/{crop}").resolve()
     file_paths = sorted(data_folder.glob("*"), key=lambda x: int(x.stem.split("_")[0]))
     print(f"Data folder: {data_folder}")
     print(f"Found {len(file_paths)} files")
 
-    output_folder = data_folder.parent.parent / "keypoints_autolabel" / crop
+    output_folder = (
+        data_folder.parent.parent
+        / "keypoints_autolabel"
+        / f"{meshing_method}_{meshing_backend}"
+        / crop
+    )
     output_folder.mkdir(parents=True, exist_ok=True)
 
     for file_path in file_paths:
         process_single_plant(
             file_path,
             output_folder=output_folder,
+            meshing_method=meshing_method,
+            meshing_backend=meshing_backend,
             visualize=visualize,
             save_keypoints=save_keypoints,
             save_labelcloud_format=save_labelcloud_format,
@@ -402,10 +435,13 @@ def process_all_plants(
 
 def main():
     # Process all plants and save keypoints as points and as spheres (for verification in labelCloud)
-    crop = "maize"
+    crop = "maize"  # Change to "maize" or other crops as needed
     print(f"Processing all plants for crop: {crop}")
     process_all_plants(
-        crop=crop, visualize=True, save_keypoints=True, save_labelcloud_format=True
+        crop=crop,
+        visualize=DEFAULTS["visualize"],
+        save_keypoints=DEFAULTS["save_keypoints"],
+        save_labelcloud_format=DEFAULTS["save_labelcloud_format"],
     )
 
 
