@@ -8,7 +8,7 @@ import pymeshlab
 from leaf_meshing import mesh_leaf
 
 STEM_LABEL = 0  # Label for stem points in the point cloud
-COLOR_MAP = {
+COLOR_MAP = {  # Color mapping for semantic labels to match roughly the TrackPlant3D paper figures
     0: np.array([0.0, 1.0, 0.0]),  # Green
     1: np.array([1.0, 0.0, 0.0]),  # Red
     2: np.array([1.0, 1.0, 0.0]),  # Yellow
@@ -22,7 +22,7 @@ COLOR_MAP = {
 }
 DEFAULTS = {
     "meshing_method": "ball_pivoting",  # Default meshing method, options: "ball_pivoting", "poisson"
-    "meshing_backend": "open3d",  # Default backend for meshing, options: "open3d", "pymeshlab"
+    "meshing_backend": "pymeshlab",  # Default backend for meshing, options: "open3d", "pymeshlab"
     "visualize": False,  # Whether to visualize the meshes and keypoints
     "save_keypoints": True,  # Whether to save extracted keypoints
     "save_labelcloud_format": True,  # Whether to save keypoints in labelCloud format
@@ -194,31 +194,37 @@ def process_plant_keypoints(
 
         try:
             # Extract keypoints
-            insertion_point, tip_point, insertion_index, tip_index = (
+            insertion_point, tip_point, insertion_local_index, tip_local_index = (
                 extract_leaf_keypoints(
                     leaf_points, stem_points, meshing_method, meshing_backend, visualize
                 )
             )
 
+            # Map local indices to global indices
+            insertion_global_index = leaf_indices[insertion_local_index]
+            tip_global_index = leaf_indices[tip_local_index]
+
             keypoints_data[int(leaf_id)] = {
                 "insertion_point": insertion_point,
                 "tip_point": tip_point,
-                "insertion_index": insertion_index,
-                "tip_index": tip_index,
+                "insertion_local_index": insertion_local_index,
+                "tip_local_index": tip_local_index,
+                "insertion_global_index": insertion_global_index,
+                "tip_global_index": tip_global_index,
                 "leaf_points": leaf_points,
                 "num_points": len(leaf_points),
             }
 
             print(
                 f"Leaf {int(leaf_id)}: {len(leaf_points)} points, "
-                f"insertion at index {insertion_index}, tip at index {tip_index}"
+                f"insertion at index {insertion_local_index}, tip at index {tip_local_index}"
             )
 
             # Visualize if requested
             if visualize:
                 visualize_plant_open3d(
                     leaf_points,
-                    keypoint_indices=[tip_index],
+                    keypoint_indices=[tip_local_index],
                     window_name=f"Leaf {int(leaf_id)} and leaf tip (red highlight)",
                 )
 
@@ -332,8 +338,10 @@ def process_single_plant(
             json_data[leaf_id] = {
                 "insertion_point": data["insertion_point"].tolist(),
                 "tip_point": data["tip_point"].tolist(),
-                "insertion_index": int(data["insertion_index"]),
-                "tip_index": int(data["tip_index"]),
+                "insertion_local_index": int(data["insertion_local_index"]),
+                "tip_local_index": int(data["tip_local_index"]),
+                "insertion_global_index": int(data["insertion_global_index"]),
+                "tip_global_index": int(data["tip_global_index"]),
                 "num_points": data["num_points"],
             }
 
@@ -408,7 +416,10 @@ def process_all_plants(
     save_keypoints: bool = DEFAULTS["save_keypoints"],
     save_labelcloud_format: bool = DEFAULTS["save_labelcloud_format"],
 ):
+    print(f"Processing all plants for crop: {crop}")
     data_folder = Path(f"data/TrackPlant3D/gt/{crop}").resolve()
+    assert data_folder.exists(), f"Data folder {data_folder} does not exist"
+
     file_paths = sorted(data_folder.glob("*"), key=lambda x: int(x.stem.split("_")[0]))
     print(f"Data folder: {data_folder}")
     print(f"Found {len(file_paths)} files")
@@ -433,15 +444,69 @@ def process_all_plants(
         )
 
 
+def parse_args():
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Detect leaf tips in TrackPlant3D data"
+    )
+    parser.add_argument(
+        "--crop",
+        type=str,
+        default="maize",
+        choices=["maize", "sorghum", "tobacco", "tomato"],
+        help="Crop type to process (default: maize)",
+    )
+    parser.add_argument(
+        "--visualize",
+        action="store_true",
+        help=f"Visualize the point clouds and keypoints",
+    )
+    parser.add_argument(
+        "--meshing_method",
+        type=str,
+        default=DEFAULTS["meshing_method"],
+        choices=["ball_pivoting", "poisson"],
+        help=f"Meshing method to use (default: {DEFAULTS['meshing_method']})",
+    )
+    parser.add_argument(
+        "--meshing_backend",
+        type=str,
+        default=DEFAULTS["meshing_backend"],
+        choices=["open3d", "pymeshlab"],
+        help=f"Meshing backend to use (default: {DEFAULTS['meshing_backend']})",
+    )
+    parser.add_argument(
+        "--no_save_keypoints",
+        action="store_false",
+        dest="save_keypoints",
+        help="Do not save extracted keypoints to JSON files",
+    )
+    parser.add_argument(
+        "--no_save_labelcloud_format",
+        action="store_false",
+        dest="save_labelcloud_format",
+        help="Do not save keypoints in labelCloud format for manual editing",
+    )
+    parser.add_argument(
+        "--sphere_radius",
+        type=float,
+        default=DEFAULTS["sphere_radius"],
+        help=f"Radius for spheres in labelCloud format (default: {DEFAULTS['sphere_radius']})",
+    )
+    return parser.parse_args()
+
+
 def main():
+    args = parse_args()
     # Process all plants and save keypoints as points and as spheres (for verification in labelCloud)
-    crop = "maize"  # Change to "maize" or other crops as needed
-    print(f"Processing all plants for crop: {crop}")
     process_all_plants(
-        crop=crop,
-        visualize=DEFAULTS["visualize"],
-        save_keypoints=DEFAULTS["save_keypoints"],
-        save_labelcloud_format=DEFAULTS["save_labelcloud_format"],
+        crop=args.crop,
+        visualize=args.visualize,
+        meshing_method=args.meshing_method,
+        meshing_backend=args.meshing_backend,
+        save_keypoints=args.save_keypoints,
+        save_labelcloud_format=args.save_labelcloud_format,
     )
 
 
