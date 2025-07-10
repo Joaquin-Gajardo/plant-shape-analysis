@@ -10,7 +10,8 @@ conda create -n plant-shape-analysis python==3.12
 conda activate plant-shape-analysis
 conda install -c conda-forge gcc gxx  # For X forwarding open3d window with PuTTy and XLaunch (optional)
 conda install ipykernel # for Jupyter notebooks in VSCode
-pip install open3d plyfile pymeshlab
+#pip install open3d plyfile pymeshlab
+pip install -e .  # Install the package in editable mode
 ```
 
 ### (Optional) Using my fork of labelCloud
