@@ -3,9 +3,10 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
-import open3d as o3d
 import pymeshlab
-from leaf_meshing import mesh_leaf
+
+from data_preprocessing.leaf_meshing import mesh_leaf
+from vis.plot_functions import visualize_point_cloud, visualize_pymeshlab_mesh
 
 STEM_LABEL = 0  # Label for stem points in the point cloud
 COLOR_MAP = {  # Color mapping for semantic labels to match roughly the TrackPlant3D paper figures
@@ -75,7 +76,7 @@ def extract_leaf_keypoints(
     ms.add_mesh(mesh, "leaf")
 
     if visualize:
-        visualize_mesh_open3d(ms, f"Leaf Mesh")
+        visualize_pymeshlab_mesh(ms, f"Leaf Mesh")
 
     # Find leaf centroid
     centroid = np.mean(leaf_points, axis=0)
@@ -115,46 +116,6 @@ def extract_leaf_keypoints(
     tip_index = indices[tip_idx]
 
     return insertion_point, tip_point, insertion_index, tip_index
-
-
-def visualize_mesh_open3d(
-    ms: pymeshlab.MeshSet, window_name: str = "Mesh Visualization"
-):
-    """
-    Visualize a PyMeshLab mesh using Open3D
-
-    Args:
-        ms: PyMeshLab MeshSet containing the mesh
-        window_name: Name for the visualization window
-    """
-    # Get the current mesh from MeshSet
-    mesh = ms.current_mesh()
-
-    # Extract vertices and faces
-    vertices = mesh.vertex_matrix()
-    faces = mesh.face_matrix()
-
-    # Create Open3D mesh
-    o3d_mesh = o3d.geometry.TriangleMesh()
-    o3d_mesh.vertices = o3d.utility.Vector3dVector(vertices)
-    o3d_mesh.triangles = o3d.utility.Vector3iVector(faces)
-
-    # Compute normals for better visualization
-    o3d_mesh.compute_vertex_normals()
-    # Convert normals to colors (normal mapping visualization)
-    normals = np.asarray(o3d_mesh.vertex_normals)
-
-    # Map normals from [-1, 1] to [0, 1] for RGB values
-    # This creates the typical blue-green normal map appearance
-    colors = (normals + 1.0) / 2.0
-
-    # Apply the colors to the mesh
-    o3d_mesh.vertex_colors = o3d.utility.Vector3dVector(colors)
-
-    # Visualize
-    o3d.visualization.draw_geometries(
-        [o3d_mesh], window_name=window_name, mesh_show_back_face=True
-    )
 
 
 def process_plant_keypoints(
@@ -257,7 +218,8 @@ def map_labels_to_colors(labels: np.ndarray) -> np.ndarray:
 def visualize_plant_open3d(
     points: np.ndarray,
     labels: Optional[np.ndarray] = None,
-    keypoint_indices: Optional[list] = None,
+    keypoint_indices: Optional[list[int]] = None,
+    colors: Optional[np.ndarray] = None,
     window_name: str = "Plant Keypoints Visualization",
 ):
     """
@@ -266,7 +228,9 @@ def visualize_plant_open3d(
     Args:
         points: numpy array of shape (n_points, 3)
         labels: numpy array of shape (n_points,) with semantic labels
-        tip_indices: indices of keypoint to highlight
+        keypoint_indices: indices of keypoint to highlight
+        colors: optional numpy array of shape (n_points, 3) for custom colors
+        window_name: name for the Open3D visualization window
     """
 
     # Array of colors for visualization
@@ -279,14 +243,11 @@ def visualize_plant_open3d(
         if keypoint_indices is not None:
             colors[keypoint_indices] = [1.0, 0.0, 0.0]  # Red for key points
 
-    # Create point cloud
-    plant_pcd = o3d.geometry.PointCloud()
-    plant_pcd.points = o3d.utility.Vector3dVector(points)
-    plant_pcd.colors = o3d.utility.Vector3dVector(colors)
-    geometries = [plant_pcd]
-
-    # Visualize
-    o3d.visualization.draw_geometries(geometries, window_name=window_name)
+    visualize_point_cloud(
+        points,
+        colors=colors,
+        window_name=window_name,
+    )
 
 
 def process_single_plant(
