@@ -22,6 +22,7 @@ COLOR_MAP = {  # Color mapping for semantic labels to match roughly the TrackPla
     9: np.array([1.0, 0.75, 0.8]),  # Pink
 }
 DEFAULTS = {
+    "output_folder": "keypoints_autolabel",  # Default output folder for keypoints,
     "meshing_method": "ball_pivoting",  # Default meshing method, options: "ball_pivoting", "poisson"
     "meshing_backend": "pymeshlab",  # Default backend for meshing, options: "open3d", "pymeshlab"
     "visualize": False,  # Whether to visualize the meshes and keypoints
@@ -371,6 +372,7 @@ def save_keypoints_labelcloud_format(
 
 def process_all_plants(
     crop: str = "sorghum",
+    output_folder: str = DEFAULTS["output_folder"],
     visualize: bool = DEFAULTS["visualize"],
     meshing_method: str = DEFAULTS["meshing_method"],
     meshing_backend: str = DEFAULTS["meshing_backend"],
@@ -385,18 +387,18 @@ def process_all_plants(
     print(f"Data folder: {data_folder}")
     print(f"Found {len(file_paths)} files")
 
-    output_folder = (
+    output_folder_path = (
         data_folder.parent.parent
-        / "keypoints_autolabel"
+        / output_folder
         / f"{meshing_method}_{meshing_backend}"
         / crop
     )
-    output_folder.mkdir(parents=True, exist_ok=True)
+    output_folder_path.mkdir(parents=True, exist_ok=True)
 
     for file_path in file_paths:
         process_single_plant(
             file_path,
-            output_folder=output_folder,
+            output_folder=output_folder_path,
             meshing_method=meshing_method,
             meshing_backend=meshing_backend,
             visualize=visualize,
@@ -417,6 +419,12 @@ def parse_args():
         default="maize",
         choices=["maize", "sorghum", "tobacco", "tomato"],
         help="Crop type to process (default: maize)",
+    )
+    parser.add_argument(
+        "--output_folder",
+        type=str,
+        default=DEFAULTS["output_folder"],
+        help=f"Output folder to save results (default: {DEFAULTS['output_folder']})",
     )
     parser.add_argument(
         "--visualize",
@@ -485,6 +493,7 @@ def main():
         # Process all plants and save keypoints as points and as spheres (for verification in labelCloud)
         process_all_plants(
             crop=args.crop,
+            output_folder=args.output_folder,
             visualize=args.visualize,
             meshing_method=args.meshing_method,
             meshing_backend=args.meshing_backend,
