@@ -79,7 +79,7 @@ def extract_leaf_keypoints(
         visualize_pymeshlab_mesh(ms, f"Leaf Mesh")
 
     # Find leaf centroid
-    centroid = np.mean(leaf_points, axis=0)
+    centroid = np.median(leaf_points, axis=0)
     centroid_index = np.argmin(np.linalg.norm(leaf_points - centroid, axis=1))
     centroid_point = np.array(leaf_points[centroid_index], dtype=np.float32)
 
