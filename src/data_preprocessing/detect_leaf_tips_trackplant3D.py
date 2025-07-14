@@ -252,7 +252,7 @@ def visualize_plant_open3d(
 
 def process_single_plant(
     file_path: Path,
-    output_folder: Path,
+    output_folder: Optional[Path] = None,
     meshing_method: str = DEFAULTS["meshing_method"],
     meshing_backend: str = DEFAULTS["meshing_backend"],
     visualize: bool = DEFAULTS["visualize"],
@@ -455,20 +455,42 @@ def parse_args():
         default=DEFAULTS["sphere_radius"],
         help=f"Radius for spheres in labelCloud format (default: {DEFAULTS['sphere_radius']})",
     )
+    parser.add_argument(
+        "--single_plant_path",
+        type=str,
+        default=None,
+        help="Path to a single plant file to process instead of all plants. Overrides all other arguments"
+        " except --meshing_backend and --meshing_method and visualizes only the specified plant.",
+    )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-    # Process all plants and save keypoints as points and as spheres (for verification in labelCloud)
-    process_all_plants(
-        crop=args.crop,
-        visualize=args.visualize,
-        meshing_method=args.meshing_method,
-        meshing_backend=args.meshing_backend,
-        save_keypoints=args.save_keypoints,
-        save_labelcloud_format=args.save_labelcloud_format,
-    )
+
+    if args.single_plant_path:
+        file_path = Path(args.single_plant_path).resolve()
+        if not file_path.exists():
+            raise FileNotFoundError(f"Single plant file {file_path} does not exist")
+        # Process the single plant file
+        process_single_plant(
+            file_path,
+            meshing_method=args.meshing_method,
+            meshing_backend=args.meshing_backend,
+            visualize=True,  # Always visualize single plant
+            save_keypoints=False,  # Disable saving keypoints for single plant processing
+            save_labelcloud_format=False,  # Disable saving labelCloud format for single plant processing
+        )
+    else:
+        # Process all plants and save keypoints as points and as spheres (for verification in labelCloud)
+        process_all_plants(
+            crop=args.crop,
+            visualize=args.visualize,
+            meshing_method=args.meshing_method,
+            meshing_backend=args.meshing_backend,
+            save_keypoints=args.save_keypoints,
+            save_labelcloud_format=args.save_labelcloud_format,
+        )
 
 
 if __name__ == "__main__":
