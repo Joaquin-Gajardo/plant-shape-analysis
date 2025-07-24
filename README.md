@@ -40,7 +40,7 @@ Usage:
 Download the TrackPlant3D dataset from [here](https://example.com/trackplant3d), unzip and place in the `data` directory.
 
 ```python
-from dataloders.trackplant3D import PlantSequencesDataset
+from plant_shape_analysis.dataloders.trackplant3D import PlantSequencesDataset
 
 dataset_path = "data/TrackPlant3D"
 dataset = PlantSequencesDataset(dataset_path)

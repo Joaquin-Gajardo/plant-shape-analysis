@@ -117,7 +117,9 @@ def mesh_leaf(
     backend: str = "open3d",
     visualize: bool = True,
 ) -> None:
-    """Create a mesh from leaf point cloud using specified method and backend."""
+    """Create a mesh from leaf point cloud using specified method and backend.
+    Valid methods: 'ball_pivoting', 'poisson'.
+    Valid backends: 'open3d', 'pymeshlab'."""
 
     if method == "ball_pivoting":
         if backend == "open3d":

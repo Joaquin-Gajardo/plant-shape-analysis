@@ -5,8 +5,11 @@ from typing import Optional
 import numpy as np
 import pymeshlab
 
-from data_preprocessing.leaf_meshing import mesh_leaf
-from vis.plot_functions import visualize_point_cloud, visualize_pymeshlab_mesh
+from plant_shape_analysis.data_preprocessing.leaf_meshing import mesh_leaf
+from plant_shape_analysis.vis.plot_functions import (
+    visualize_point_cloud,
+    visualize_pymeshlab_mesh,
+)
 
 STEM_LABEL = 0  # Label for stem points in the point cloud
 COLOR_MAP = {  # Color mapping for semantic labels to match roughly the TrackPlant3D paper figures
