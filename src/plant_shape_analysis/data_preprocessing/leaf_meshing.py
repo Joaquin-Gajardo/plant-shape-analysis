@@ -1,4 +1,5 @@
 from argparse import ArgumentParser
+from pathlib import Path
 from typing import Optional, Tuple
 
 import numpy as np
@@ -180,7 +181,8 @@ def parse_args():
 if __name__ == "__main__":
 
     args = parse_args()
-    file_path = "data/TrackPlant3D/processed/single_leafs/maize/1_maize_control_plant1_D00_leaf2.ply"
+    file_path = "data/TrackPlant3D/examples/single_leafs/maize/1_maize_control_plant1_D00_leaf2.ply"
+    assert Path(file_path).exists(), f"File {file_path} does not exist."
     leaf_points = o3d.io.read_point_cloud(file_path)
     leaf_points = np.asarray(leaf_points.points)
 
