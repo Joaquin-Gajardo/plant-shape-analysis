@@ -2,7 +2,7 @@
 
 
 ## Setup
-Create a python environment with pymeshlab, open3D, pyorch, e.g. using conda:
+Create a python environment with pymeshlab, plyfile, open3D, pytorch, e.g. using conda:
 ```bash
 conda create -n plant-shape-analysis python==3.12
 conda activate plant-shape-analysis
