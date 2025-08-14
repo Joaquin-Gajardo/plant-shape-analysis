@@ -464,7 +464,9 @@ if __name__ == "__main__":
 
     # Example usage for LeafSequencesDataset
     print("Creating regular leaf dataset...")
-    leaf_dataset = LeafSequencesDataset(dataset_path, min_timepoints=3)
+    leaf_dataset = LeafSequencesDataset(
+        dataset_path, min_timepoints=3, apply_pca_alignment=True
+    )
     print("Leaf timeseries dataset:")
     print(f"Number of leaf timeseries: {len(leaf_dataset)}")
 
@@ -472,45 +474,7 @@ if __name__ == "__main__":
     print("Dataset info:", info)
     print("\n")
 
-    # Example usage with PCA alignment integrated
-    print("Creating PCA-aligned leaf dataset...")
-    aligned_leaf_dataset = LeafSequencesDataset(
-        dataset_path,
-        min_timepoints=3,
-        apply_pca_alignment=True,
-        save_transformations=True,
-    )
-    print(f"PCA-aligned dataset created with {len(aligned_leaf_dataset)} sequences")
-    print("\n")
+    # Example usage for LeafSequencesDataset
+    from plant_shape_analysis.vis.plot_functions import visualize_leaf_sequence
 
-    # Compare regular vs aligned dataset samples
-    if len(leaf_dataset) > 0 and len(aligned_leaf_dataset) > 0:
-        # Regular sample
-        sample = leaf_dataset[100]
-        print("Regular sample:")
-        print(f"Sequence: {sample['sequence_name']}")
-        print(f"Leaf ID: {sample['leaf_id']}")
-        print(f"Number of timepoints: {len(sample['timepoints'])}")
-        print(f"Is aligned: {sample.get('is_aligned', False)}")
-
-        # Aligned sample
-        aligned_sample = aligned_leaf_dataset[100]
-        print(f"\nAligned sample:")
-        print(f"Sequence: {aligned_sample['sequence_name']}")
-        print(f"Leaf ID: {aligned_sample['leaf_id']}")
-        print(f"Number of timepoints: {len(aligned_sample['timepoints'])}")
-        print(f"Is aligned: {aligned_sample.get('is_aligned', False)}")
-        if aligned_sample.get("is_aligned", False):
-            print(
-                f"Has transformations: {len(aligned_sample.get('transformations', []))} matrices saved"
-            )
-
-        # Optional: Show visualization comparing regular vs aligned
-        print(f"\nVisualization available using:")
-        print(
-            f"from plant_shape_analysis.vis.plot_functions import visualize_leaf_sequence"
-        )
-        print(f"visualize_leaf_sequence(sample)  # Regular")
-        print(
-            f"visualize_leaf_sequence(aligned_sample)  # PCA-aligned with transformed leaf tips"
-        )
+    visualize_leaf_sequence(leaf_dataset[0])

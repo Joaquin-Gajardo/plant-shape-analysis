@@ -202,66 +202,6 @@ def visualize_leaf_sequence(
     )
 
 
-def visualize_aligned_leaf_sequence(
-    leaf_dataset,
-    leaf_timeseries: dict,
-    reference_idx: int = 0,
-    spacing: float = 30.0,
-    show_leaf_tips: bool = True,
-    show_connections: bool = True,
-    window_name: str = "Aligned Leaf Growth Sequence",
-):
-    """
-    Visualize an aligned leaf sequence showing growth with preserved scale differences.
-    Properly transforms leaf tip connections.
-
-    Args:
-        leaf_dataset: LeafSequencesDataset instance with align_leaf_sequence method
-        leaf_timeseries: Dictionary with 'sequence_name', 'leaf_id', and 'timepoints' keys
-        reference_idx: Index of reference timepoint for alignment
-        spacing: Distance between timepoints in the visualization
-        show_leaf_tips: Whether to highlight leaf tips as red spheres
-        show_connections: Whether to show connections between corresponding points
-        window_name: Name for the visualization window
-    """
-    # Get aligned sequence
-    aligned_timepoints, transformations = leaf_dataset.align_leaf_sequence(
-        leaf_timeseries, reference_idx
-    )
-
-    if len(aligned_timepoints) < 2:
-        print("At least two timepoints are needed for visualization")
-        return
-
-    # Create aligned leaf timeseries structure for visualization
-    aligned_leaf_timeseries = {
-        "sequence_name": leaf_timeseries["sequence_name"],
-        "leaf_id": leaf_timeseries["leaf_id"],
-        "timepoints": aligned_timepoints,
-    }
-
-    # Use existing visualization function with aligned data
-    visualize_leaf_sequence(
-        aligned_leaf_timeseries,
-        spacing=spacing,
-        show_leaf_tips=show_leaf_tips,
-        show_connections=show_connections,
-        window_name=f"Aligned {window_name}",
-    )
-
-    # Print alignment info
-    print(
-        f"\nAlignment info for {leaf_timeseries['sequence_name']} Leaf {leaf_timeseries['leaf_id']}:"
-    )
-    print(f"Reference timepoint: Day {transformations[reference_idx]['day']}")
-    for trans in transformations:
-        if not trans["is_reference"]:
-            rotation_angle = np.arccos(
-                np.clip((np.trace(trans["rotation_matrix"]) - 1) / 2, -1, 1)
-            )
-            print(f"Day {trans['day']}: Rotated {np.degrees(rotation_angle):.1f}°")
-
-
 def compare_original_vs_aligned_compact(
     leaf_dataset,
     leaf_timeseries: dict,
