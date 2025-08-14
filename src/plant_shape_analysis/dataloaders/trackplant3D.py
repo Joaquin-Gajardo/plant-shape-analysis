@@ -1,6 +1,8 @@
+import json
 import re
 from collections import defaultdict
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 from torch.utils.data import Dataset
@@ -154,13 +156,30 @@ class PlantSequencesDataset(Dataset):
 
 
 class LeafSequencesDataset(Dataset):
-    def __init__(self, dataset_path, min_timepoints=3, max_timepoints=None):
+    def __init__(
+        self,
+        dataset_path: str,
+        min_timepoints: int = 3,
+        max_timepoints: Optional[int] = None,
+        apply_pca_alignment: bool = False,
+        save_transformations: bool = False,
+    ):
         self.plant_dataset = PlantSequencesDataset(dataset_path)
+        self.dataset_path = Path(dataset_path)
         self.min_timepoints = min_timepoints
         self.max_timepoints = max_timepoints
+        self.apply_pca_alignment = apply_pca_alignment
+        self._save_transformations = save_transformations
 
         # Build leaf timeseries samples
         self.leaf_timeseries = self._build_leaf_timeseries()
+
+        # Apply PCA alignment if requested
+        if self.apply_pca_alignment:
+            print(
+                f"Applying PCA alignment to {len(self.leaf_timeseries)} leaf sequences..."
+            )
+            self._apply_pca_alignment_to_dataset()
 
     def _build_leaf_timeseries(self):
         """Build individual leaf timeseries from plant sequences"""
@@ -232,6 +251,40 @@ class LeafSequencesDataset(Dataset):
 
         return dict(leaf_tracks)
 
+    def _apply_pca_alignment_to_dataset(self):
+        """Apply PCA alignment to all leaf sequences in the dataset."""
+
+        aligned_timeseries = []
+        for i, leaf_ts in enumerate(self.leaf_timeseries):
+            if len(leaf_ts["timepoints"]) >= 2:
+                # Apply PCA alignment with first timepoint as reference
+                aligned_timepoints, transformations = self.align_leaf_sequence(
+                    leaf_ts, reference_idx=0
+                )
+
+                # Update the leaf timeseries with aligned data
+                aligned_leaf_ts = leaf_ts.copy()
+                aligned_leaf_ts["timepoints"] = aligned_timepoints
+                aligned_leaf_ts["is_aligned"] = True
+                aligned_leaf_ts["transformations"] = transformations
+
+                aligned_timeseries.append(aligned_leaf_ts)
+
+                # Save transformations if requested
+                if self._save_transformations:
+                    self.save_transformations(leaf_ts, transformations)
+
+            else:
+                # Keep original if insufficient timepoints for alignment
+                leaf_ts["is_aligned"] = False
+                aligned_timeseries.append(leaf_ts)
+
+        # Replace original timeseries with aligned ones
+        self.leaf_timeseries = aligned_timeseries
+        print(
+            f"PCA alignment complete. {len([ts for ts in self.leaf_timeseries if ts.get('is_aligned', False)])} sequences aligned."
+        )
+
     def get_leaf_timeseries_info(self):
         """Get summary information about leaf timeseries"""
         info = {
@@ -269,6 +322,128 @@ class LeafSequencesDataset(Dataset):
         """Get leaf timeseries filtered by treatment"""
         return [ts for ts in self.leaf_timeseries if treatment in ts["sequence_name"]]
 
+    def _pca_align(self, pc1, pc2):
+        """
+        PCA-based alignment that doesn't require same number of points.
+
+        Args:
+            pc1: First point cloud (centered)
+            pc2: Second point cloud (centered) - reference
+
+        Returns:
+            Rotation matrix to align pc1 to pc2's coordinate system
+        """
+
+        def get_pca(pc):
+            pc_centered = pc - pc.mean(axis=0)
+            U, S, Vt = np.linalg.svd(pc_centered, full_matrices=False)
+            return Vt
+
+        R1 = get_pca(pc1)
+        R2 = get_pca(pc2)
+        R = R2.T @ R1  # rotation matrix to align pc1 to pc2
+        return R
+
+    def align_leaf_sequence(self, leaf_timeseries, reference_idx=0):
+        """
+        Align leaf sequence using PCA-based registration, preserving scale differences.
+        Only removes rotation and translation to show growth over time.
+        Works with different numbers of points between timepoints.
+
+        Args:
+            leaf_timeseries: Leaf timeseries dict from dataset
+            reference_idx: Index of reference timepoint (default: 0)
+
+        Returns:
+            List of aligned point clouds and rotation matrices
+        """
+        timepoints = leaf_timeseries["timepoints"]
+        if len(timepoints) < 2:
+            return timepoints, []
+
+        # Get reference timepoint
+        ref_points = timepoints[reference_idx]["points"]
+        ref_center = np.mean(ref_points, axis=0)
+        ref_centered = ref_points - ref_center
+
+        aligned_timepoints = []
+        transformations = []
+
+        for i, tp in enumerate(timepoints):
+            points = tp["points"]
+            center = np.mean(points, axis=0)
+            centered = points - center
+
+            if i == reference_idx:
+                # Reference stays as is (just centered)
+                aligned_points = centered + ref_center
+                rotation_matrix = np.eye(3)
+            else:
+                # Find optimal rotation using PCA alignment
+                R = self._pca_align(centered, ref_centered)
+                # Apply rotation and translate to reference center
+                aligned_points = centered @ R.T + ref_center
+                rotation_matrix = R
+
+            # Transform leaf tip if it exists
+            aligned_leaf_tip = None
+            if tp["leaf_tip"] is not None:
+                original_tip = tp["leaf_tip"]
+                # Apply same transformation as points: center, rotate, translate
+                centered_tip = original_tip - center
+                if i == reference_idx:
+                    aligned_leaf_tip = centered_tip + ref_center
+                else:
+                    aligned_leaf_tip = centered_tip @ rotation_matrix.T + ref_center
+
+            # Preserve original timepoint structure
+            aligned_tp = tp.copy()
+            aligned_tp["points"] = aligned_points
+            aligned_tp["leaf_tip"] = aligned_leaf_tip
+            aligned_timepoints.append(aligned_tp)
+
+            transformations.append(
+                {
+                    "day": tp["day"],
+                    "rotation_matrix": rotation_matrix,
+                    "original_center": center,
+                    "reference_center": ref_center,
+                    "is_reference": i == reference_idx,
+                }
+            )
+
+        return aligned_timepoints, transformations
+
+    def save_transformations(
+        self, leaf_timeseries, transformations, save_dir="transformations"
+    ):
+        """Save transformation matrices to JSON file for later use."""
+        save_path = self.dataset_path / save_dir
+        save_path.mkdir(parents=True, exist_ok=True)
+
+        sequence_name = leaf_timeseries["sequence_name"]
+        leaf_id = leaf_timeseries["leaf_id"]
+
+        filename = f"{sequence_name}_leaf{leaf_id}_transformations.json"
+        filepath = save_path / filename
+
+        # Convert numpy arrays to lists for JSON serialization
+        json_transformations = []
+        for trans in transformations:
+            json_trans = trans.copy()
+            if isinstance(json_trans.get("rotation_matrix"), np.ndarray):
+                json_trans["rotation_matrix"] = json_trans["rotation_matrix"].tolist()
+            if isinstance(json_trans.get("original_center"), np.ndarray):
+                json_trans["original_center"] = json_trans["original_center"].tolist()
+            if isinstance(json_trans.get("reference_center"), np.ndarray):
+                json_trans["reference_center"] = json_trans["reference_center"].tolist()
+            json_transformations.append(json_trans)
+
+        with open(filepath, "w") as f:
+            json.dump(json_transformations, f, indent=2)
+
+        print(f"Transformations saved to {filepath}")
+
     def __len__(self):
         return len(self.leaf_timeseries)
 
@@ -283,11 +458,12 @@ if __name__ == "__main__":
     print("Plant sequences dataset:")
     print(f"Number of sequences: {len(plant_dataset)}")
     print(
-        "Available sequences:", plant_dataset.get_sequence_names()[:5]
+        "Available sequences (first 5):", plant_dataset.get_sequence_names()[:5]
     )  # Show first 5
     print("\n")
 
-    # Example usage for LeafTimeseriesDataset
+    # Example usage for LeafSequencesDataset
+    print("Creating regular leaf dataset...")
     leaf_dataset = LeafSequencesDataset(dataset_path, min_timepoints=3)
     print("Leaf timeseries dataset:")
     print(f"Number of leaf timeseries: {len(leaf_dataset)}")
@@ -296,20 +472,45 @@ if __name__ == "__main__":
     print("Dataset info:", info)
     print("\n")
 
-    # Get first leaf timeseries sample
-    if len(leaf_dataset) > 0:
+    # Example usage with PCA alignment integrated
+    print("Creating PCA-aligned leaf dataset...")
+    aligned_leaf_dataset = LeafSequencesDataset(
+        dataset_path,
+        min_timepoints=3,
+        apply_pca_alignment=True,
+        save_transformations=True,
+    )
+    print(f"PCA-aligned dataset created with {len(aligned_leaf_dataset)} sequences")
+    print("\n")
+
+    # Compare regular vs aligned dataset samples
+    if len(leaf_dataset) > 0 and len(aligned_leaf_dataset) > 0:
+        # Regular sample
         sample = leaf_dataset[100]
-        print("Sample leaf timeseries:")
+        print("Regular sample:")
         print(f"Sequence: {sample['sequence_name']}")
         print(f"Leaf ID: {sample['leaf_id']}")
         print(f"Number of timepoints: {len(sample['timepoints'])}")
-        print(f"Days: {[tp['day'] for tp in sample['timepoints']]}")
-        print(f"Point counts: {[len(tp['points']) for tp in sample['timepoints']]}")
+        print(f"Is aligned: {sample.get('is_aligned', False)}")
+
+        # Aligned sample
+        aligned_sample = aligned_leaf_dataset[100]
+        print(f"\nAligned sample:")
+        print(f"Sequence: {aligned_sample['sequence_name']}")
+        print(f"Leaf ID: {aligned_sample['leaf_id']}")
+        print(f"Number of timepoints: {len(aligned_sample['timepoints'])}")
+        print(f"Is aligned: {aligned_sample.get('is_aligned', False)}")
+        if aligned_sample.get("is_aligned", False):
+            print(
+                f"Has transformations: {len(aligned_sample.get('transformations', []))} matrices saved"
+            )
+
+        # Optional: Show visualization comparing regular vs aligned
+        print(f"\nVisualization available using:")
         print(
-            f"Has leaf tips: {[tp['leaf_tip'] is not None for tp in sample['timepoints']]}"
+            f"from plant_shape_analysis.vis.plot_functions import visualize_leaf_sequence"
         )
-
-        # Example visualization
-        from plant_shape_analysis.vis.plot_functions import visualize_leaf_sequence
-
-        visualize_leaf_sequence(sample)
+        print(f"visualize_leaf_sequence(sample)  # Regular")
+        print(
+            f"visualize_leaf_sequence(aligned_sample)  # PCA-aligned with transformed leaf tips"
+        )
