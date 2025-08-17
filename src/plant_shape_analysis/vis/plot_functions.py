@@ -190,6 +190,88 @@ def visualize_leaf_sequence(
                 tip_sphere.paint_uniform_color([1.0, 0.0, 0.0])  # Red color
                 geometries.append(tip_sphere)
 
+        # Suppose you have: transformations = [...]  # list of dicts, each with "basis"
+
+        # Draw principal axes from transformation["basis"] if available
+        transformations = leaf_timeseries["transformations"][i]
+        if transformations is not None:
+            basis = transformations.get(
+                "basis", None
+            )  # NOTE: can change to "rotation_matrix" too
+            if basis is not None:
+                arrow_origin = points.mean(axis=0)
+                arrow_origin[1] += i * spacing
+                axis_colors = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+                for j in range(3):
+                    axis_vec = basis[j]  # or basis[:, j] depending on your convention
+                    length = 10  # or scale as you wish
+                    arrow = o3d.geometry.TriangleMesh.create_arrow(
+                        cylinder_radius=0.3,
+                        cone_radius=0.6,
+                        cylinder_height=length * 0.8,
+                        cone_height=length * 0.2,
+                    )
+                    # Align arrow with axis_vec
+                    z_axis = np.array([0, 0, 1])
+                    axis_vec_norm = axis_vec / np.linalg.norm(axis_vec)
+                    v = np.cross(z_axis, axis_vec_norm)
+                    c = np.dot(z_axis, axis_vec_norm)
+                    if np.linalg.norm(v) < 1e-8:
+                        R = np.eye(3)
+                    else:
+                        vx = np.array(
+                            [[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]]
+                        )
+                        R = (
+                            np.eye(3)
+                            + vx
+                            + vx @ vx * ((1 - c) / (np.linalg.norm(v) ** 2))
+                        )
+                    arrow.rotate(R, center=np.zeros(3))
+                    arrow.translate(arrow_origin)
+                    arrow.paint_uniform_color(axis_colors[j])
+                    geometries.append(arrow)
+
+        # # --- Add principal axes (eigenvectors) visualization as arrows ---
+        # # Compute PCA (eigenvectors of covariance)
+        # pc_centered = points - points.mean(axis=0)
+        # cov = np.cov(pc_centered, rowvar=False)
+        # eigvals, eigvecs = np.linalg.eigh(cov)
+        # idx = np.argsort(eigvals)[::-1]
+        # eigvecs = eigvecs[:, idx]
+        # eigvals = eigvals[idx]
+        # # Arrow origin: mean of translated points
+        # arrow_origin = points.mean(axis=0)
+        # arrow_origin[1] += i * spacing
+        # # Draw 3 principal axes as arrows (quivers)
+        # for j in range(3):
+        #     axis_vec = eigvecs[:, j]
+        #     # Scale for visualization (length proportional to sqrt eigenvalue)
+        #     length = np.sqrt(np.abs(eigvals[j])) * 5
+        #     arrow = o3d.geometry.TriangleMesh.create_arrow(
+        #         cylinder_radius=0.3,
+        #         cone_radius=0.6,
+        #         cylinder_height=length * 0.8,
+        #         cone_height=length * 0.2,
+        #     )
+        #     # Align arrow with axis_vec
+        #     # Default arrow points in +Z, so rotate to axis_vec
+        #     z_axis = np.array([0, 0, 1])
+        #     axis_vec_norm = axis_vec / np.linalg.norm(axis_vec)
+        #     v = np.cross(z_axis, axis_vec_norm)
+        #     c = np.dot(z_axis, axis_vec_norm)
+        #     if np.linalg.norm(v) < 1e-8:
+        #         R = np.eye(3)
+        #     else:
+        #         vx = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+        #         R = np.eye(3) + vx + vx @ vx * ((1 - c) / (np.linalg.norm(v) ** 2))
+        #     arrow.rotate(R, center=np.zeros(3))
+        #     arrow.translate(arrow_origin)
+        #     # Color: RGB for axes
+        #     axis_colors = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+        #     arrow.paint_uniform_color(axis_colors[j])
+        #     geometries.append(arrow)
+
     if show_connections:
         # Visualize connections between leaf tips
         line_set = create_correspondence_lines(leaf_tip_positions)
@@ -453,3 +535,43 @@ def plot_sequence_projections(
     plt.show()
 
     return fig
+
+
+def plot_pairwise_alignment_with_quivers(timepoints, transformations, idx1, idx2):
+    """
+    Plots two timepoints' point clouds and their principal axes as quivers.
+    """
+
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection="3d")
+
+    colors = ["r", "g", "b"]
+    for idx, color, label in zip([idx1, idx2], ["blue", "orange"], ["ref", "other"]):
+        points = timepoints[idx]["points"]
+        R = transformations[idx]["rotation_matrix"]
+        center = transformations[idx]["reference_center"]
+        ax.scatter(
+            points[:, 0],
+            points[:, 1],
+            points[:, 2],
+            alpha=0.3,
+            label=f"Timepoint {idx} ({label})",
+        )
+        # Plot principal axes as quivers
+        for i in range(3):
+            ax.quiver(
+                center[0],
+                center[1],
+                center[2],
+                R[i, 0],
+                R[i, 1],
+                R[i, 2],
+                length=10,
+                color=colors[i],
+                linewidth=2,
+                arrow_length_ratio=0.2,
+            )
+
+    ax.legend()
+    ax.set_title("Pairwise Alignment with Principal Axes (Quivers)")
+    plt.show()

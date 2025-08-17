@@ -4,8 +4,11 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Optional
 
+import matplotlib.pyplot as plt
 import numpy as np
 from torch.utils.data import Dataset
+
+from plant_shape_analysis.vis.plot_functions import plot_pairwise_alignment_with_quivers
 
 
 class PlantSequencesDataset(Dataset):
@@ -325,9 +328,10 @@ class LeafSequencesDataset(Dataset):
     def _pca_align(self, pc1, pc2):
         """
         PCA-based alignment that doesn't require same number of points.
+        Ensures consistent orientation by aligning to reference (pc2) principal components.
 
         Args:
-            pc1: First point cloud (centered)
+            pc1: First point cloud (centered) - to be aligned
             pc2: Second point cloud (centered) - reference
 
         Returns:
@@ -337,18 +341,55 @@ class LeafSequencesDataset(Dataset):
         def get_pca(pc):
             pc_centered = pc - pc.mean(axis=0)
             U, S, Vt = np.linalg.svd(pc_centered, full_matrices=False)
-            return Vt
+            is_sorted = np.all(S[:-1] >= S[1:])
+            if not is_sorted:
+                print("Singular values not sorted descending")
+            return Vt  # rows are components
 
-        R1 = get_pca(pc1)
+        def align_components_to_reference(components, reference_components):
+            """Align principal components to match reference orientation"""
+            aligned_components = components.copy()
+
+            for i in range(min(len(components), len(reference_components))):
+                # Check dot product to determine if we need to flip
+                dot_product = np.dot(components[i], reference_components[i])
+
+                # If dot product is negative, flip the component to align with reference
+                if dot_product < 0:
+                    aligned_components[i] = -aligned_components[i]
+
+            return aligned_components
+
+        # Get PCA components for both point clouds
+        R1_raw = get_pca(pc1)
         R2 = get_pca(pc2)
-        R = R2.T @ R1  # rotation matrix to align pc1 to pc2
-        return R
+
+        # Align pc1 components to match pc2 reference orientation
+        R1 = align_components_to_reference(R1_raw, R2)
+
+        # Compute rotation matrix to align pc1 to pc2
+        R = R2.T @ R1
+
+        # Additional check: ensure rotation doesn't introduce a flip
+        # Check if determinant is negative (indicates reflection/flip)
+        if np.linalg.det(R) < 0:
+            print("Reflection detected: flipping first principal component")
+            # If we have a reflection, flip the last principal component
+            R1[0] = -R1[
+                0
+            ]  # NOTE: this helps for the first timeseries last leaf compared to flipping the third SV
+            R = R2.T @ R1
+
+        # self.check_singular_vector_consistency(R1, R2)
+
+        return R, R1
 
     def align_leaf_sequence(self, leaf_timeseries, reference_idx=0):
         """
         Align leaf sequence using PCA-based registration, preserving scale differences.
         Only removes rotation and translation to show growth over time.
         Works with different numbers of points between timepoints.
+        Ensures consistent orientation across all timepoints.
 
         Args:
             leaf_timeseries: Leaf timeseries dict from dataset
@@ -378,12 +419,12 @@ class LeafSequencesDataset(Dataset):
                 # Reference stays as is (just centered)
                 aligned_points = centered + ref_center
                 rotation_matrix = np.eye(3)
+                basis = np.eye(3)
             else:
                 # Find optimal rotation using PCA alignment
-                R = self._pca_align(centered, ref_centered)
+                rotation_matrix, basis = self._pca_align(centered, ref_centered)
                 # Apply rotation and translate to reference center
-                aligned_points = centered @ R.T + ref_center
-                rotation_matrix = R
+                aligned_points = centered @ rotation_matrix.T + ref_center
 
             # Transform leaf tip if it exists
             aligned_leaf_tip = None
@@ -401,16 +442,23 @@ class LeafSequencesDataset(Dataset):
             aligned_tp["points"] = aligned_points
             aligned_tp["leaf_tip"] = aligned_leaf_tip
             aligned_timepoints.append(aligned_tp)
-
             transformations.append(
                 {
                     "day": tp["day"],
                     "rotation_matrix": rotation_matrix,
+                    "basis": basis,
                     "original_center": center,
                     "reference_center": ref_center,
                     "is_reference": i == reference_idx,
                 }
             )
+
+            # # Plot pairwise alignment
+            # if i == reference_idx:
+            #     continue
+            # plot_pairwise_alignment_with_quivers(
+            #     aligned_timepoints, transformations, idx1=reference_idx, idx2=i
+            # )
 
         return aligned_timepoints, transformations
 
@@ -474,7 +522,10 @@ if __name__ == "__main__":
     print("Dataset info:", info)
     print("\n")
 
-    # Example usage for LeafSequencesDataset
+    # Visualize one sequence
     from plant_shape_analysis.vis.plot_functions import visualize_leaf_sequence
 
-    visualize_leaf_sequence(leaf_dataset[0])
+    for i, sample in enumerate(leaf_dataset):
+        if i <= 2:
+            print(f"Visualizing leaf sequence {i}")
+            visualize_leaf_sequence(sample)
