@@ -6,6 +6,7 @@ from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
+import open3d as o3d
 from torch.utils.data import Dataset
 
 from plant_shape_analysis.vis.plot_functions import plot_pairwise_alignment_with_quivers
@@ -166,6 +167,7 @@ class LeafSequencesDataset(Dataset):
         max_timepoints: Optional[int] = None,
         apply_pca_alignment: bool = False,
         save_transformations: bool = False,
+        estimate_normals: bool = False,
     ):
         self.plant_dataset = PlantSequencesDataset(dataset_path)
         self.dataset_path = Path(dataset_path)
@@ -173,6 +175,7 @@ class LeafSequencesDataset(Dataset):
         self.max_timepoints = max_timepoints
         self.apply_pca_alignment = apply_pca_alignment
         self._save_transformations = save_transformations
+        self.estimate_normals = estimate_normals
 
         # Build leaf timeseries samples
         self.leaf_timeseries = self._build_leaf_timeseries()
@@ -183,6 +186,9 @@ class LeafSequencesDataset(Dataset):
                 f"Applying PCA alignment to {len(self.leaf_timeseries)} leaf sequences..."
             )
             self._apply_pca_alignment_to_dataset()
+
+        if self.estimate_normals:
+            self._estimate_normals()
 
     def _build_leaf_timeseries(self):
         """Build individual leaf timeseries from plant sequences"""
@@ -253,6 +259,21 @@ class LeafSequencesDataset(Dataset):
             leaf_tracks[leaf_id].sort(key=lambda x: x["day"])
 
         return dict(leaf_tracks)
+
+    def _estimate_normals(self):
+        print("Estimating normals for all leaves in the dataset...")
+        for leaf in self.leaf_timeseries:
+            for timepoint in leaf["timepoints"]:
+                points = timepoint["points"]
+                if points is not None:
+                    # Estimate normals using Open3D
+                    pcd = o3d.geometry.PointCloud()
+                    pcd.points = o3d.utility.Vector3dVector(points)
+                    pcd.estimate_normals()
+                    pcd.orient_normals_to_align_with_direction()
+                    pcd.orient_normals_consistent_tangent_plane(k=30)
+                    normals = np.asarray(pcd.normals)
+                    timepoint["points"] = np.hstack([timepoint["points"], normals])
 
     def _apply_pca_alignment_to_dataset(self):
         """Apply PCA alignment to all leaf sequences in the dataset."""
@@ -500,32 +521,36 @@ class LeafSequencesDataset(Dataset):
 
 
 if __name__ == "__main__":
-    # Example usage for PlantSequencesDataset
+
     dataset_path = Path("data/TrackPlant3D")
-    plant_dataset = PlantSequencesDataset(dataset_path)
-    print("Plant sequences dataset:")
-    print(f"Number of sequences: {len(plant_dataset)}")
-    print(
-        "Available sequences (first 5):", plant_dataset.get_sequence_names()[:5]
-    )  # Show first 5
-    print("\n")
+
+    # # Example usage for PlantSequencesDataset
+    # plant_dataset = PlantSequencesDataset(dataset_path)
+    # print("Plant sequences dataset:")
+    # print(f"Number of sequences: {len(plant_dataset)}")
+    # print(
+    #     "Available sequences (first 5):", plant_dataset.get_sequence_names()[:5]
+    # )  # Show first 5
+    # print("\n")
 
     # Example usage for LeafSequencesDataset
     print("Creating regular leaf dataset...")
     leaf_dataset = LeafSequencesDataset(
         dataset_path, min_timepoints=3, apply_pca_alignment=True
     )
-    print("Leaf timeseries dataset:")
-    print(f"Number of leaf timeseries: {len(leaf_dataset)}")
+    # print("Leaf timeseries dataset:")
+    # print(f"Number of leaf timeseries: {len(leaf_dataset)}")
 
-    info = leaf_dataset.get_leaf_timeseries_info()
-    print("Dataset info:", info)
-    print("\n")
+    # info = leaf_dataset.get_leaf_timeseries_info()
+    # print("Dataset info:", info)
+    # print("\n")
 
-    # Visualize one sequence
-    from plant_shape_analysis.vis.plot_functions import visualize_leaf_sequence
+    # # Visualize one sequence
+    # from plant_shape_analysis.vis.plot_functions import visualize_leaf_sequence
 
-    for i, sample in enumerate(leaf_dataset):
-        if i <= 2:
-            print(f"Visualizing leaf sequence {i}")
-            visualize_leaf_sequence(sample)
+    # for i, sample in enumerate(leaf_dataset):
+    #     if i <= 2:
+    #         print(f"Visualizing leaf sequence {i}")
+    #         visualize_leaf_sequence(sample)
+
+    sample = leaf_dataset[0]

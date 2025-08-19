@@ -62,14 +62,22 @@ def visualize_point_cloud(
     """
 
     # Create point cloud
+
+    has_normals = points.shape[-1] == 6
+    if has_normals:
+        xyz = points[:, :3]
+        normals = points[:, 3:]
+    else:
+        xyz = points
+
     plant_pcd = o3d.geometry.PointCloud()
-    plant_pcd.points = o3d.utility.Vector3dVector(points)
+    plant_pcd.points = o3d.utility.Vector3dVector(xyz)
+    if has_normals:
+        plant_pcd.normals = o3d.utility.Vector3dVector(normals)
     if colors is not None:
         plant_pcd.colors = o3d.utility.Vector3dVector(colors)
-    geometries = [plant_pcd]
 
-    # Visualize
-    o3d.visualization.draw_geometries(geometries, window_name=window_name)
+    o3d.visualization.draw_geometries([plant_pcd], window_name=window_name)
 
 
 def create_correspondence_lines(
