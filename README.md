@@ -36,13 +36,9 @@ Usage:
 
 </details>
 
-### Usage: TrackPlant3D dataset
-Download the TrackPlant3D dataset from [here](https://example.com/trackplant3d), unzip and place in the `data` directory.
+## Training
+### Fit single leaf surface
 
-```python
-from plant_shape_analysis.dataloders.trackplant3D import PlantSequencesDataset
-
-dataset_path = "data/TrackPlant3D"
-dataset = PlantSequencesDataset(dataset_path)
-print(dataset[0])  # Get first plant sequence (43 in total)
-```
+Using Siren (Sitzmann et al., 2020):
+```bash
+python fit_leaf_surface.py # will get a leaf from a random sequence and timepoint
