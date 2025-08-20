@@ -135,12 +135,14 @@ class Siren(nn.Module):
 
 
 class PointCloudSiren(Dataset):
-    def __init__(self, point_cloud, on_surface_points, keep_aspect_ratio=True):
+    def __init__(
+        self,
+        point_cloud,
+        on_surface_points,
+        off_surface_points=1,
+        keep_aspect_ratio=True,
+    ):
         super().__init__()
-
-        # print("Loading point cloud")
-        # point_cloud = np.genfromtxt(pointcloud_path)
-        # print("Finished loading point cloud")
 
         coords = point_cloud[:, :3]
         self.normals = point_cloud[:, 3:]
@@ -160,6 +162,7 @@ class PointCloudSiren(Dataset):
         self.coords *= 2.0
 
         self.on_surface_points = on_surface_points
+        self.off_surface_points = off_surface_points
 
     def __len__(self):
         return self.coords.shape[0] // self.on_surface_points
@@ -167,8 +170,7 @@ class PointCloudSiren(Dataset):
     def __getitem__(self, idx):
         point_cloud_size = self.coords.shape[0]
 
-        off_surface_samples = self.on_surface_points * 100
-        total_samples = self.on_surface_points + off_surface_samples
+        total_samples = self.on_surface_points + self.off_surface_points
 
         # Random coords
         rand_idcs = np.random.choice(point_cloud_size, size=self.on_surface_points)
@@ -176,8 +178,8 @@ class PointCloudSiren(Dataset):
         on_surface_coords = self.coords[rand_idcs, :]
         on_surface_normals = self.normals[rand_idcs, :]
 
-        off_surface_coords = np.random.uniform(-1, 1, size=(off_surface_samples, 3))
-        off_surface_normals = np.ones((off_surface_samples, 3)) * -1
+        off_surface_coords = np.random.uniform(-1, 1, size=(self.off_surface_points, 3))
+        off_surface_normals = np.ones((self.off_surface_points, 3)) * -1
 
         sdf = np.zeros((total_samples, 1))  # on-surface = 0
         sdf[self.on_surface_points :, :] = -1  # off-surface = -1
