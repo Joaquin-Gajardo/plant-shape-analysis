@@ -3,3 +3,8 @@ __pycache__
 .labelCloud.log
 config.ini
 data
+logs
+
+# Files
+*.ply
+*.pth

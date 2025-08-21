@@ -75,6 +75,8 @@ class SineLayer(nn.Module):
 
 
 class Siren(nn.Module):
+    model_name = "siren"
+
     def __init__(
         self,
         in_features,
@@ -139,7 +141,7 @@ class PointCloudSiren(Dataset):
         self,
         point_cloud,
         on_surface_points,
-        off_surface_points=1000,
+        off_surface_points=10_000,
         keep_aspect_ratio=True,
     ):
         super().__init__()

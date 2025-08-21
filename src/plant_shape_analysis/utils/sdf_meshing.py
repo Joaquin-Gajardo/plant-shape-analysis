@@ -2,19 +2,18 @@
 
 #!/usr/bin/env python3
 
-import logging
 import time
 
 import numpy as np
 import plyfile
 import skimage.measure
 import torch
+from tqdm import tqdm
 
 
-def create_mesh(decoder, filename, N=256, max_batch=64**3, offset=None, scale=None):
-    start = time.time()
-    ply_filename = filename
-
+def create_mesh(
+    decoder, filename, N=256, max_batch=64**3, offset=None, scale=None, iso_level=0.0
+):
     decoder.eval()
 
     # NOTE: the voxel_origin is actually the (bottom, left, down) corner, not the middle
@@ -23,6 +22,8 @@ def create_mesh(decoder, filename, N=256, max_batch=64**3, offset=None, scale=No
 
     overall_index = torch.arange(0, N**3, 1, out=torch.LongTensor())
     samples = torch.zeros(N**3, 4)
+
+    print(f"Sampling SDF with {N**3} voxels...")
 
     # transform first 3 columns
     # to be the x, y, z index
@@ -41,54 +42,53 @@ def create_mesh(decoder, filename, N=256, max_batch=64**3, offset=None, scale=No
     samples.requires_grad = False
 
     head = 0
+    with tqdm(total=num_samples, desc="Sampling SDF") as pbar:
+        while head < num_samples:
+            sample_subset = samples[head : min(head + max_batch, num_samples), 0:3]
+            if torch.cuda.is_available():
+                sample_subset = sample_subset.cuda()
 
-    while head < num_samples:
-        print(head)
-        sample_subset = samples[head : min(head + max_batch, num_samples), 0:3].cuda()
+            with torch.no_grad():
+                sdf_values = decoder(sample_subset).squeeze().detach().cpu()
 
-        samples[head : min(head + max_batch, num_samples), 3] = (
-            decoder(sample_subset).squeeze().detach().cpu()  # .squeeze(1)
-        )
-        head += max_batch
+            samples[head : min(head + max_batch, num_samples), 3] = sdf_values
+            processed = min(max_batch, num_samples - head)
+            head += processed
+            pbar.update(processed)
 
     sdf_values = samples[:, 3]
     sdf_values = sdf_values.reshape(N, N, N)
 
-    end = time.time()
-    print("sampling takes: %f" % (end - start))
-
     convert_sdf_samples_to_ply(
-        sdf_values.data.cpu(),
+        sdf_values.numpy(),
         voxel_origin,
         voxel_size,
-        ply_filename,
+        filename,
         offset,
         scale,
+        iso_level=iso_level,
     )
 
 
 def convert_sdf_samples_to_ply(
-    pytorch_3d_sdf_tensor,
+    numpy_3d_sdf_tensor,
     voxel_grid_origin,
     voxel_size,
     ply_filename_out,
     offset=None,
     scale=None,
+    iso_level=0.0,
 ):
     """
     Convert sdf samples to .ply
 
-    :param pytorch_3d_sdf_tensor: a torch.FloatTensor of shape (n,n,n)
+    :param numpy_3d_sdf_tensor: a numpy.ndarray of shape (n,n,n)
     :voxel_grid_origin: a list of three floats: the bottom, left, down origin of the voxel grid
     :voxel_size: float, the size of the voxels
     :ply_filename_out: string, path of the filename to save to
 
     This function adapted from: https://github.com/RobotLocomotion/spartan
     """
-
-    start_time = time.time()
-
-    numpy_3d_sdf_tensor = pytorch_3d_sdf_tensor.numpy()
 
     verts, faces, normals, values = (
         np.zeros((0, 3)),
@@ -97,11 +97,13 @@ def convert_sdf_samples_to_ply(
         np.zeros(0),
     )
     try:
+        print(f"Running marching cubes...")
         verts, faces, normals, values = skimage.measure.marching_cubes(
-            numpy_3d_sdf_tensor, level=0.0, spacing=[voxel_size] * 3
+            numpy_3d_sdf_tensor, spacing=[voxel_size] * 3, level=iso_level
         )
-    except:
-        pass
+    except Exception as e:
+        print(f"Marching cubes failed: {e}")
+        verts, faces = np.zeros((0, 3)), np.zeros((0, 3))
 
     # transform from voxel coordinates to camera coordinates
     # note x and y are flipped in the output of marching_cubes
@@ -116,30 +118,31 @@ def convert_sdf_samples_to_ply(
     if offset is not None:
         mesh_points = mesh_points - offset
 
-    # try writing to the ply file
-
+    # Write PLY file
     num_verts = verts.shape[0]
     num_faces = faces.shape[0]
 
-    verts_tuple = np.zeros((num_verts,), dtype=[("x", "f4"), ("y", "f4"), ("z", "f4")])
-
-    for i in range(0, num_verts):
-        verts_tuple[i] = tuple(mesh_points[i, :])
-
-    faces_building = []
-    for i in range(0, num_faces):
-        faces_building.append(((faces[i, :].tolist(),)))
-    faces_tuple = np.array(faces_building, dtype=[("vertex_indices", "i4", (3,))])
-
-    el_verts = plyfile.PlyElement.describe(verts_tuple, "vertex")
-    el_faces = plyfile.PlyElement.describe(faces_tuple, "face")
-
-    ply_data = plyfile.PlyData([el_verts, el_faces])
-    logging.debug("saving mesh to %s" % (ply_filename_out))
-    ply_data.write(ply_filename_out)
-
-    logging.debug(
-        "converting to ply format and writing to file took {} s".format(
-            time.time() - start_time
+    if num_verts > 0:
+        verts_tuple = np.zeros(
+            (num_verts,), dtype=[("x", "f4"), ("y", "f4"), ("z", "f4")]
         )
-    )
+
+        for i in range(0, num_verts):
+            verts_tuple[i] = tuple(mesh_points[i, :])
+
+        faces_building = []
+        for i in range(0, num_faces):
+            faces_building.append(((faces[i, :].tolist(),)))
+        faces_tuple = np.array(faces_building, dtype=[("vertex_indices", "i4", (3,))])
+
+        el_verts = plyfile.PlyElement.describe(verts_tuple, "vertex")
+        el_faces = plyfile.PlyElement.describe(faces_tuple, "face")
+
+        ply_data = plyfile.PlyData([el_verts, el_faces])
+        ply_data.write(ply_filename_out)
+        print(
+            f"Saved mesh with {num_verts} vertices and {num_faces} faces to {ply_filename_out}"
+        )
+
+    else:
+        print(f"No mesh generated for {ply_filename_out}")
