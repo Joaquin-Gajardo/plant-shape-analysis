@@ -13,11 +13,11 @@ from plant_shape_analysis.vis.plot_functions import visualize_point_cloud
 
 
 def get_leaf(
-    seq_idx=None,
-    timepoint=None,
-    with_normals=True,
-    visualize=True,
-    off_surface_points=10_000,
+    seq_idx: int = None,
+    timepoint: int = None,
+    with_normals: bool = True,
+    visualize: bool = True,
+    off_surface_points: int = 10_000,
 ):
     # We just want a single leaf so we don't estimate normals for all to save time
     leaf_sequences = LeafSequencesDataset("data/TrackPlant3D", estimate_normals=False)
@@ -49,8 +49,7 @@ def get_leaf(
     return dataset
 
 
-def extract_mesh(checkpoint_path, N=1600):
-
+def extract_mesh(checkpoint_path: str, N: int = 512):
     class SDFDecoder(torch.nn.Module):
         def __init__(self):
             super().__init__()
@@ -77,12 +76,16 @@ def main(
     num_epochs=100_000,
     checkpoint_path="siren_model.pth",
     off_surface_points=10_000,
-    resolution=1600,
+    resolution=256,
 ):
     # Get random leaf, instanciate model & optimizer
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dataset = get_leaf(
-        with_normals=True, visualize=True, off_surface_points=off_surface_points
+        seq_idx=0,
+        timepoint=0,
+        with_normals=True,
+        visualize=True,
+        off_surface_points=off_surface_points,
     )
     print("Dataset size: ", len(dataset))
 
@@ -131,4 +134,6 @@ def main(
 
 
 if __name__ == "__main__":
-    main()
+    resolution = 512
+    # main(resolution=resolution)
+    extract_mesh("siren_model.pth", N=resolution)

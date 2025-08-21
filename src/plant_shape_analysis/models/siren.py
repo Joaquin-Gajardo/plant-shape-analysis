@@ -139,7 +139,7 @@ class PointCloudSiren(Dataset):
         self,
         point_cloud,
         on_surface_points,
-        off_surface_points=1,
+        off_surface_points=1000,
         keep_aspect_ratio=True,
     ):
         super().__init__()
