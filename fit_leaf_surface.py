@@ -1,4 +1,5 @@
 import random
+from pathlib import Path
 
 import numpy as np
 import open3d as o3d
@@ -54,7 +55,7 @@ def get_leaf(
 
 
 def extract_mesh(
-    checkpoint_path: str, mesh_filename: str, N: int = 512, iso_level: float = 0.0
+    checkpoint_path: str, out_mesh_path: str, N: int = 512, iso_level: float = 0.0
 ):
     class SDFDecoder(torch.nn.Module):
         def __init__(self):
@@ -80,28 +81,29 @@ def extract_mesh(
             return self.model(coords)["model_out"]
 
     sdf_decoder = SDFDecoder()
-    sdf_meshing.create_mesh(
-        sdf_decoder, f"{mesh_filename}.ply", N=N, iso_level=iso_level
-    )
+    sdf_meshing.create_mesh(sdf_decoder, out_mesh_path, N=N, iso_level=iso_level)
 
 
 def main(
+    results_folder="results/static_leaves/siren/dry_runs",
     num_epochs=100_000,
-    checkpoint_path="siren_model.pth",
     off_surface_points=10_000,
     resolution=512,
 ):
-    # Get random leaf, instanciate model & optimizer
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    dataset, leaf_name = get_leaf(
+    print(f"Using device: {device}")
+
+    # Get leaf point cloud to fit
+    sample, leaf_name = get_leaf(
         seq_idx=0,
         timepoint=0,
         with_normals=True,
         visualize=False,
         off_surface_points=off_surface_points,
     )
-    print("Dataset size: ", len(dataset))
+    print("Point cloud size: ", len(sample))
 
+    # Model and optimizer
     model = Siren(
         in_features=3,
         hidden_features=128,
@@ -115,11 +117,16 @@ def main(
     optimizer = torch.optim.Adam(lr=1e-4, params=model.parameters())
 
     dataloader = DataLoader(
-        dataset, shuffle=True, batch_size=1, pin_memory=True, num_workers=0
+        sample, shuffle=True, batch_size=1, pin_memory=True, num_workers=0
     )
 
+    # Define paths
+    experiment_path = Path(results_folder) / f"{leaf_name}-{model.model_name}"
+    experiment_path.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = experiment_path.with_suffix(".pth")
+
     # Train loop
-    writer = SummaryWriter("logs")
+    writer = SummaryWriter(log_dir=experiment_path)
     model.train()
 
     for epoch in range(num_epochs):
@@ -133,7 +140,7 @@ def main(
             losses = sdf_loss(output, y["sdf"].to(device), y["normals"].to(device))
 
             train_loss = 0.0
-            for loss_name, loss in losses.items():
+            for _, loss in losses.items():
                 train_loss += loss.mean()
 
             train_loss.backward()
@@ -152,7 +159,7 @@ def main(
     print(f"Extracting mesh with marching cubes...")
     extract_mesh(
         checkpoint_path,
-        mesh_filename=f"{leaf_name}-{model.model_name}_res{resolution}",
+        out_mesh_path=experiment_path / f"mesh_res{resolution}.ply",
         N=resolution,
     )
 
