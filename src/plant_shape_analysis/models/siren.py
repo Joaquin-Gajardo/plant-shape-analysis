@@ -28,6 +28,7 @@ from collections import OrderedDict
 
 import numpy as np
 import torch
+from sklearn.neighbors import NearestNeighbors
 from torch import nn
 from torch.nn.functional import cosine_similarity
 from torch.utils.data import Dataset
@@ -143,6 +144,9 @@ class PointCloudSiren(Dataset):
         on_surface_points,
         off_surface_points=10_000,
         keep_aspect_ratio=True,
+        sampling_strategy="mixed",
+        k_neighbors=50,
+        off_surface_local_points_ratio=0.5,
     ):
         super().__init__()
 
@@ -165,23 +169,62 @@ class PointCloudSiren(Dataset):
 
         self.on_surface_points = on_surface_points
         self.off_surface_points = off_surface_points
+        self.sampling_strategy = sampling_strategy
+        self.k_neighbors = k_neighbors
+        self.off_surface_local_points_ratio = off_surface_local_points_ratio
+
+        # Pre-compute k-nearest neighbor distances for Gaussian sampling
+        if sampling_strategy == "mixed":
+            self._compute_knn_distances()
+
+        print("Off surface sampling strategy: ", self.sampling_strategy)
+
+    def _compute_knn_distances(self):
+        nbrs = NearestNeighbors(n_neighbors=self.k_neighbors + 1).fit(self.coords)
+        distances, _ = nbrs.kneighbors(self.coords)
+        # Use k-th nearest neighbor distance (excluding self)
+        self.knn_distances = distances[:, self.k_neighbors]
 
     def __len__(self):
         return self.coords.shape[0] // self.on_surface_points
 
     def __getitem__(self, idx):
         point_cloud_size = self.coords.shape[0]
-
         total_samples = self.on_surface_points + self.off_surface_points
 
-        # Random coords
+        # On surface points
         rand_idcs = np.random.choice(point_cloud_size, size=self.on_surface_points)
-
         on_surface_coords = self.coords[rand_idcs, :]
         on_surface_normals = self.normals[rand_idcs, :]
 
-        off_surface_coords = np.random.uniform(-1, 1, size=(self.off_surface_points, 3))
-        off_surface_normals = np.ones((self.off_surface_points, 3)) * -1
+        # Off-surface points
+        if self.sampling_strategy == "uniform":
+            off_surface_coords = np.random.uniform(
+                -1, 1, size=(self.off_surface_points, 3)
+            )
+            off_surface_normals = np.ones((self.off_surface_points, 3)) * -1
+
+        elif self.sampling_strategy == "mixed":
+            # Split off-surface points into local and global
+            n_local = int(self.off_surface_points * self.off_surface_local_points_ratio)
+            n_global = self.off_surface_points - n_local
+
+            # Global off-surface points: uniform distribution
+            global_coords = np.random.uniform(-1, 1, size=(n_global, 3))
+
+            # Local off-surface points (gaussian distribution)
+            center_indices = np.random.choice(point_cloud_size, size=n_local)
+            centers = self.coords[center_indices]
+            std_devs = self.knn_distances[center_indices]
+            local_coords = np.random.normal(
+                loc=centers, scale=std_devs[:, np.newaxis], size=(n_local, 3)
+            )
+            local_coords = global_coords + local_coords
+
+            off_surface_coords = np.concatenate([local_coords, global_coords], axis=0)
+            off_surface_normals = np.ones((self.off_surface_points, 3)) * -1
+        else:
+            raise ValueError(f"Unknown sampling strategy: {self.sampling_strategy}")
 
         sdf = np.zeros((total_samples, 1))  # on-surface = 0
         sdf[self.on_surface_points :, :] = -1  # off-surface = -1

@@ -1,4 +1,5 @@
 import random
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -19,6 +20,7 @@ def get_leaf(
     with_normals: bool = True,
     visualize: bool = True,
     off_surface_points: int = 10_000,
+    sampling_strategy: str = "mixed",
 ):
     """Get a leaf dataset with the fixed PointCloudSiren class"""
 
@@ -48,7 +50,10 @@ def get_leaf(
         visualize_point_cloud(point_cloud)
 
     dataset = PointCloudSiren(
-        point_cloud, len(point_cloud), off_surface_points=off_surface_points
+        point_cloud,
+        len(point_cloud),
+        off_surface_points=off_surface_points,
+        sampling_strategy=sampling_strategy,
     )
 
     return dataset, leaf_name
@@ -88,6 +93,7 @@ def main(
     results_folder="results/static_leaves/siren/dry_runs",
     num_epochs=100_000,
     off_surface_points=10_000,
+    sampling_strategy="mixed",
     resolution=512,
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -100,8 +106,8 @@ def main(
         with_normals=True,
         visualize=False,
         off_surface_points=off_surface_points,
+        sampling_strategy=sampling_strategy,
     )
-    print("Point cloud size: ", len(sample))
 
     # Model and optimizer
     model = Siren(
@@ -121,7 +127,10 @@ def main(
     )
 
     # Define paths
-    experiment_path = Path(results_folder) / f"{leaf_name}-{model.model_name}"
+    experiment_path = (
+        Path(results_folder)
+        / f"{leaf_name}-{model.model_name}_{off_surface_points}offpoints_{sampling_strategy}"
+    )
     experiment_path.mkdir(parents=True, exist_ok=True)
     checkpoint_path = experiment_path.with_suffix(".pth")
 
@@ -165,4 +174,5 @@ def main(
 
 
 if __name__ == "__main__":
-    main()
+    sampling_strategy = sys.argv[1]
+    main(sampling_strategy=sampling_strategy)
