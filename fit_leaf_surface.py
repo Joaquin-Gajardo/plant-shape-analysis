@@ -1,5 +1,6 @@
 import random
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -127,12 +128,11 @@ def main(
     )
 
     # Define paths
-    experiment_path = (
-        Path(results_folder)
-        / f"{leaf_name}-{model.model_name}_{off_surface_points}offpoints_{sampling_strategy}"
-    )
+    now = datetime.now().strftime("%Y%m%d_%H%M%S")
+    experiment_name = f"{now}_{leaf_name}-{model.model_name}_{off_surface_points}offpoints_{sampling_strategy}"
+    experiment_path = Path(results_folder) / experiment_name
     experiment_path.mkdir(parents=True, exist_ok=True)
-    checkpoint_path = experiment_path.with_suffix(".pth")
+    checkpoint_path = experiment_path / (experiment_name + ".pth")
 
     # Train loop
     writer = SummaryWriter(log_dir=experiment_path)
