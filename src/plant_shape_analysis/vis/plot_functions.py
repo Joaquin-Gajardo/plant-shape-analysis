@@ -402,3 +402,119 @@ def visualize_sdf_slices(model, z_levels=[-0.05, 0.0, 0.02, 0.05]):
     plt.tight_layout()
     plt.savefig("sdf_slices.png", dpi=150, bbox_inches="tight")
     print("Saved SDF slices to 'sdf_slices.png'")
+
+
+def create_sdf_cross_section(sdf_decoder, device, slice_position=0.0, resolution=256):
+    """Create cross-section visualizations of the SDF along the three orthogonal planes"""
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+
+    # Collect all SDF values to determine global min/max for consistent colorbar
+    all_sdf_values = []
+
+    # XY plane (constant Z)
+    x = torch.linspace(-1, 1, resolution)
+    y = torch.linspace(-1, 1, resolution)
+    X, Y = torch.meshgrid(x, y, indexing="ij")
+    Z = torch.full_like(X, slice_position)
+    coords = torch.stack([X.flatten(), Y.flatten(), Z.flatten()], dim=-1).to(device)
+
+    with torch.no_grad():
+        sdf_values_xy = sdf_decoder(coords).cpu().reshape(resolution, resolution)
+    all_sdf_values.append(sdf_values_xy)
+
+    # XZ plane (constant Y)
+    x = torch.linspace(-1, 1, resolution)
+    z = torch.linspace(-1, 1, resolution)
+    X, Z = torch.meshgrid(x, z, indexing="ij")
+    Y = torch.full_like(X, slice_position)
+    coords = torch.stack([X.flatten(), Y.flatten(), Z.flatten()], dim=-1).to(device)
+
+    with torch.no_grad():
+        sdf_values_xz = sdf_decoder(coords).cpu().reshape(resolution, resolution)
+    all_sdf_values.append(sdf_values_xz)
+
+    # YZ plane (constant X)
+    y = torch.linspace(-1, 1, resolution)
+    z = torch.linspace(-1, 1, resolution)
+    Y, Z = torch.meshgrid(y, z, indexing="ij")
+    X = torch.full_like(Y, slice_position)
+    coords = torch.stack([X.flatten(), Y.flatten(), Z.flatten()], dim=-1).to(device)
+
+    with torch.no_grad():
+        sdf_values_yz = sdf_decoder(coords).cpu().reshape(resolution, resolution)
+    all_sdf_values.append(sdf_values_yz)
+
+    # Determine global min/max for consistent colorbar
+    vmin = min(sdf.min().item() for sdf in all_sdf_values)
+    vmax = max(sdf.max().item() for sdf in all_sdf_values)
+
+    # Plot XY plane
+    x = torch.linspace(-1, 1, resolution)
+    y = torch.linspace(-1, 1, resolution)
+    X, Y = torch.meshgrid(x, y, indexing="ij")
+    axes[0].contour(
+        X.cpu(), Y.cpu(), sdf_values_xy, levels=[0], colors="red", linewidths=2
+    )
+    im0 = axes[0].contourf(
+        X.cpu(),
+        Y.cpu(),
+        sdf_values_xy,
+        levels=20,
+        cmap="RdBu_r",
+        alpha=0.6,
+        vmin=vmin,
+        vmax=vmax,
+    )
+    axes[0].set_title(f"XY plane (z = {slice_position})")
+    axes[0].set_xlabel("x")
+    axes[0].set_ylabel("y")
+    axes[0].set_aspect("equal")
+
+    # Plot XZ plane
+    x = torch.linspace(-1, 1, resolution)
+    z = torch.linspace(-1, 1, resolution)
+    X, Z = torch.meshgrid(x, z, indexing="ij")
+    axes[1].contour(
+        X.cpu(), Z.cpu(), sdf_values_xz, levels=[0], colors="red", linewidths=2
+    )
+    im1 = axes[1].contourf(
+        X.cpu(),
+        Z.cpu(),
+        sdf_values_xz,
+        levels=20,
+        cmap="RdBu_r",
+        alpha=0.6,
+        vmin=vmin,
+        vmax=vmax,
+    )
+    axes[1].set_title(f"XZ plane (y = {slice_position})")
+    axes[1].set_xlabel("x")
+    axes[1].set_ylabel("z")
+    axes[1].set_aspect("equal")
+
+    # Plot YZ plane
+    y = torch.linspace(-1, 1, resolution)
+    z = torch.linspace(-1, 1, resolution)
+    Y, Z = torch.meshgrid(y, z, indexing="ij")
+    axes[2].contour(
+        Y.cpu(), Z.cpu(), sdf_values_yz, levels=[0], colors="red", linewidths=2
+    )
+    im2 = axes[2].contourf(
+        Y.cpu(),
+        Z.cpu(),
+        sdf_values_yz,
+        levels=20,
+        cmap="RdBu_r",
+        alpha=0.6,
+        vmin=vmin,
+        vmax=vmax,
+    )
+    axes[2].set_title(f"YZ plane (x = {slice_position})")
+    axes[2].set_xlabel("y")
+    axes[2].set_ylabel("z")
+    axes[2].set_aspect("equal")
+
+    # Add a single colorbar for all subplots with consistent range
+    fig.colorbar(im0, ax=axes, shrink=0.8, aspect=30)
+
+    return fig

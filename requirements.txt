@@ -3,3 +3,4 @@ plyfile==1.1.2
 pymeshlab==2023.12.post3
 torch==2.7.1
 scikit-image==0.25.2
+wandb==0.21.1

@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 
 def create_mesh(
-    decoder, filename, N=256, max_batch=64**3, offset=None, scale=None, iso_level=0.0
+    decoder, filename, N=256, max_batch=64**3, offset=None, scale=None, iso_level=0.0, format="ply"
 ):
     decoder.eval()
 
@@ -59,15 +59,23 @@ def create_mesh(
     sdf_values = samples[:, 3]
     sdf_values = sdf_values.reshape(N, N, N)
 
-    convert_sdf_samples_to_ply(
+    # Run marching cubes to get mesh
+    mesh_points, faces = extract_mesh_from_sdf(
         sdf_values.numpy(),
         voxel_origin,
         voxel_size,
-        filename,
         offset,
         scale,
         iso_level=iso_level,
     )
+    
+    # Export to the specified format
+    if format.lower() == "ply":
+        save_mesh_as_ply(mesh_points, faces, filename)
+    elif format.lower() == "obj":
+        save_mesh_as_obj(mesh_points, faces, filename)
+    else:
+        raise ValueError(f"Unsupported format: {format}. Use 'ply' or 'obj'.")
 
 
 def convert_sdf_samples_to_ply(
@@ -146,3 +154,91 @@ def convert_sdf_samples_to_ply(
 
     else:
         print(f"No mesh generated for {ply_filename_out}")
+
+
+def extract_mesh_from_sdf(
+    numpy_3d_sdf_tensor,
+    voxel_grid_origin,
+    voxel_size,
+    offset=None,
+    scale=None,
+    iso_level=0.0,
+):
+    """
+    Extract mesh from SDF using marching cubes
+    
+    Returns:
+        mesh_points: numpy array of vertices
+        faces: numpy array of face indices
+    """
+    try:
+        print(f"Running marching cubes...")
+        verts, faces, normals, values = skimage.measure.marching_cubes(
+            numpy_3d_sdf_tensor, spacing=[voxel_size] * 3, level=iso_level
+        )
+    except Exception as e:
+        print(f"Marching cubes failed: {e}")
+        return np.zeros((0, 3)), np.zeros((0, 3))
+
+    # transform from voxel coordinates to camera coordinates
+    # note x and y are flipped in the output of marching_cubes
+    mesh_points = np.zeros_like(verts)
+    mesh_points[:, 0] = voxel_grid_origin[0] + verts[:, 0]
+    mesh_points[:, 1] = voxel_grid_origin[1] + verts[:, 1]
+    mesh_points[:, 2] = voxel_grid_origin[2] + verts[:, 2]
+
+    # apply additional offset and scale
+    if scale is not None:
+        mesh_points = mesh_points / scale
+    if offset is not None:
+        mesh_points = mesh_points - offset
+
+    return mesh_points, faces
+
+
+def save_mesh_as_ply(mesh_points, faces, filename):
+    """Save mesh as PLY file"""
+    num_verts = mesh_points.shape[0]
+    num_faces = faces.shape[0]
+
+    if num_verts > 0:
+        verts_tuple = np.zeros(
+            (num_verts,), dtype=[("x", "f4"), ("y", "f4"), ("z", "f4")]
+        )
+
+        for i in range(num_verts):
+            verts_tuple[i] = tuple(mesh_points[i, :])
+
+        faces_building = []
+        for i in range(num_faces):
+            faces_building.append(((faces[i, :].tolist(),)))
+        faces_tuple = np.array(faces_building, dtype=[("vertex_indices", "i4", (3,))])
+
+        el_verts = plyfile.PlyElement.describe(verts_tuple, "vertex")
+        el_faces = plyfile.PlyElement.describe(faces_tuple, "face")
+
+        ply_data = plyfile.PlyData([el_verts, el_faces])
+        ply_data.write(filename)
+        print(f"Saved mesh with {num_verts} vertices and {num_faces} faces to {filename}")
+    else:
+        print(f"No mesh generated for {filename}")
+
+
+def save_mesh_as_obj(mesh_points, faces, filename):
+    """Save mesh as OBJ file"""
+    num_verts = mesh_points.shape[0]
+    num_faces = faces.shape[0]
+
+    if num_verts > 0:
+        with open(filename, 'w') as f:
+            # Write vertices
+            for i in range(num_verts):
+                f.write(f"v {mesh_points[i, 0]} {mesh_points[i, 1]} {mesh_points[i, 2]}\n")
+            
+            # Write faces (OBJ uses 1-based indexing)
+            for i in range(num_faces):
+                f.write(f"f {faces[i, 0]+1} {faces[i, 1]+1} {faces[i, 2]+1}\n")
+        
+        print(f"Saved mesh with {num_verts} vertices and {num_faces} faces to {filename}")
+    else:
+        print(f"No mesh generated for {filename}")

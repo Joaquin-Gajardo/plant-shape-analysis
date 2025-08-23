@@ -1,20 +1,23 @@
 import random
-import sys
 from argparse import ArgumentParser
 from datetime import datetime
 from pathlib import Path
-from urllib import parse
 
+import matplotlib.pyplot as plt
 import numpy as np
 import open3d as o3d
 import torch
+import wandb
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from plant_shape_analysis.dataloaders.trackplant3D import LeafSequencesDataset
 from plant_shape_analysis.models.siren import PointCloudSiren, Siren, sdf_loss
 from plant_shape_analysis.utils import sdf_meshing
-from plant_shape_analysis.vis.plot_functions import visualize_point_cloud
+from plant_shape_analysis.vis.plot_functions import (
+    create_sdf_cross_section,
+    visualize_point_cloud,
+)
 
 
 def get_leaf(
@@ -63,7 +66,11 @@ def get_leaf(
 
 
 def extract_mesh(
-    checkpoint_path: str, out_mesh_path: str, N: int = 512, iso_level: float = 0.0
+    checkpoint_path: str,
+    out_mesh_path: str,
+    N: int = 512,
+    iso_level: float = 0.0,
+    format: str = "ply",
 ):
     class SDFDecoder(torch.nn.Module):
         def __init__(self):
@@ -89,7 +96,9 @@ def extract_mesh(
             return self.model(coords)["model_out"]
 
     sdf_decoder = SDFDecoder()
-    sdf_meshing.create_mesh(sdf_decoder, out_mesh_path, N=N, iso_level=iso_level)
+    sdf_meshing.create_mesh(
+        sdf_decoder, out_mesh_path, N=N, iso_level=iso_level, format=format
+    )
 
 
 def main(
@@ -98,6 +107,7 @@ def main(
     off_surface_points=10_000,
     sampling_strategy="mixed",
     resolution=512,
+    logger="wandb",
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -136,10 +146,29 @@ def main(
     experiment_path.mkdir(parents=True, exist_ok=True)
     checkpoint_path = experiment_path / (experiment_name + ".pth")
 
-    # Train loop
-    writer = SummaryWriter(log_dir=experiment_path)
-    model.train()
+    # Initialize logging
+    writer = None
+    if logger == "tensorboard":
+        writer = SummaryWriter(log_dir=experiment_path)
+    elif logger == "wandb":
+        wandb.init(
+            project="plant-shape-analysis",
+            name=experiment_name,
+            dir=experiment_path,
+            config={
+                "leaf_name": leaf_name,
+                "model": model.model_name,
+                "epochs": epochs,
+                "off_surface_points": off_surface_points,
+                "sampling_strategy": sampling_strategy,
+                "hidden_features": 128,
+                "hidden_layers": 3,
+                "learning_rate": 1e-4,
+            },
+        )
 
+    # Training loop
+    model.train()
     for epoch in range(epochs):
         total_train_loss = 0.0
 
@@ -158,10 +187,56 @@ def main(
             optimizer.step()
             total_train_loss += train_loss.item()
 
-        if epoch % 100 == 0:
+        if epoch % 100 == 0 and epoch > 0:
             avg_loss = total_train_loss / len(dataloader)
             print(f"Epoch {epoch}/{epochs}, training loss: {avg_loss}")
-            writer.add_scalar("total_train_loss", avg_loss, epoch)
+            if logger == "tensorboard" and writer:
+                writer.add_scalar("total_train_loss", avg_loss, epoch)
+            elif logger == "wandb":
+                log_data = {"total_train_loss": avg_loss, "epoch": epoch}
+
+                # Log SDF cross-sections every 5000 epochs
+                if epoch % 5000 == 0 and epoch > 0:
+                    model.eval()
+                    with torch.no_grad():
+                        # Create wrapper that extracts SDF values
+                        def sdf_decoder(coords):
+                            return model(coords)["model_out"]
+
+                        fig = create_sdf_cross_section(
+                            sdf_decoder, device, slice_position=0.0, resolution=128
+                        )
+                        log_data["sdf_cross_section"] = wandb.Image(fig)
+                        plt.close(fig)
+                    model.train()
+
+                # Log intermediate mesh every 20000 epochs
+                if epoch % 20000 == 0 and epoch > 0:
+                    model.eval()
+
+                    # Temporary checkpoint and mesh
+                    temp_checkpoint = experiment_path / f"temp_epoch_{epoch}.pth"
+                    temp_mesh_path = experiment_path / f"mesh_epoch_{epoch}_res128.obj"
+
+                    torch.save(model.state_dict(), temp_checkpoint)
+                    extract_mesh(
+                        temp_checkpoint,
+                        temp_mesh_path,
+                        N=128,
+                        iso_level=0.0,
+                        format="obj",
+                    )
+
+                    if temp_mesh_path.exists():
+                        log_data[f"mesh"] = wandb.Object3D(
+                            str(temp_mesh_path), caption=f"Mesh at epoch {epoch}"
+                        )
+
+                    # Clean up temporary checkpoint
+                    temp_checkpoint.unlink(missing_ok=True)
+                    model.train()
+
+                wandb.log(log_data)
 
     torch.save(model.state_dict(), checkpoint_path)
     print(f"Training complete. Model saved to {checkpoint_path}")
@@ -172,7 +247,12 @@ def main(
         checkpoint_path,
         out_mesh_path=experiment_path / f"mesh_res{resolution}.ply",
         N=resolution,
+        format="ply",
     )
+
+    # Log final mesh to wandb
+    if logger == "wandb":
+        wandb.finish()
 
 
 if __name__ == "__main__":
@@ -182,15 +262,19 @@ if __name__ == "__main__":
         "--results_folder", type=str, default="results/static_leaves/siren/dry_runs"
     )
     parser.add_argument("--epochs", type=int, default=100_000)
-    parser.add_argument("--sampling_strategy", type=str, default="mixed")
+    parser.add_argument("--sampling_strategy", type=str, default="uniform")
     parser.add_argument("--off_surface_points", type=int, default=10_000)
     parser.add_argument("--resolution", type=int, default=512)
+    parser.add_argument(
+        "--logger", type=str, default="wandb", choices=["tensorboard", "wandb"]
+    )
     args = parser.parse_args()
 
     main(
         results_folder=args.results_folder,
-        num_epochs=args.epochs,
+        epochs=args.epochs,
         sampling_strategy=args.sampling_strategy,
         off_surface_points=args.off_surface_points,
         resolution=args.resolution,
+        logger=args.logger,
     )
