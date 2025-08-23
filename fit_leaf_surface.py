@@ -1,7 +1,9 @@
 import random
 import sys
+from argparse import ArgumentParser
 from datetime import datetime
 from pathlib import Path
+from urllib import parse
 
 import numpy as np
 import open3d as o3d
@@ -174,5 +176,21 @@ def main(
 
 
 if __name__ == "__main__":
-    sampling_strategy = sys.argv[1]
-    main(sampling_strategy=sampling_strategy)
+
+    parser = ArgumentParser()
+    parser.add_argument(
+        "--results_folder", type=str, default="results/static_leaves/siren/dry_runs"
+    )
+    parser.add_argument("--num_epochs", type=int, default=100_000)
+    parser.add_argument("--sampling_strategy", type=str, default="mixed")
+    parser.add_argument("--off_surface_points", type=int, default=10_000)
+    parser.add_argument("--resolution", type=int, default=512)
+    args = parser.parse_args()
+
+    main(
+        results_folder=args.results_folder,
+        num_epochs=args.num_epochs,
+        sampling_strategy=args.sampling_strategy,
+        off_surface_points=args.off_surface_points,
+        resolution=args.resolution,
+    )
