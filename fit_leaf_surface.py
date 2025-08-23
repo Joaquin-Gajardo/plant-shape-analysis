@@ -94,7 +94,7 @@ def extract_mesh(
 
 def main(
     results_folder="results/static_leaves/siren/dry_runs",
-    num_epochs=100_000,
+    epochs=100_000,
     off_surface_points=10_000,
     sampling_strategy="mixed",
     resolution=512,
@@ -131,7 +131,7 @@ def main(
 
     # Define paths
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
-    experiment_name = f"{now}_{leaf_name}-{model.model_name}_{off_surface_points}offpoints_{sampling_strategy}"
+    experiment_name = f"{now}_{leaf_name}-{model.model_name}_{epochs}epochs_{off_surface_points}offpoints_{sampling_strategy}"
     experiment_path = Path(results_folder) / experiment_name
     experiment_path.mkdir(parents=True, exist_ok=True)
     checkpoint_path = experiment_path / (experiment_name + ".pth")
@@ -140,7 +140,7 @@ def main(
     writer = SummaryWriter(log_dir=experiment_path)
     model.train()
 
-    for epoch in range(num_epochs):
+    for epoch in range(epochs):
         total_train_loss = 0.0
 
         for batch in dataloader:
@@ -181,7 +181,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--results_folder", type=str, default="results/static_leaves/siren/dry_runs"
     )
-    parser.add_argument("--num_epochs", type=int, default=100_000)
+    parser.add_argument("--epochs", type=int, default=100_000)
     parser.add_argument("--sampling_strategy", type=str, default="mixed")
     parser.add_argument("--off_surface_points", type=int, default=10_000)
     parser.add_argument("--resolution", type=int, default=512)
@@ -189,7 +189,7 @@ if __name__ == "__main__":
 
     main(
         results_folder=args.results_folder,
-        num_epochs=args.num_epochs,
+        num_epochs=args.epochs,
         sampling_strategy=args.sampling_strategy,
         off_surface_points=args.off_surface_points,
         resolution=args.resolution,
