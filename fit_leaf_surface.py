@@ -160,7 +160,7 @@ def main(
 
         if epoch % 100 == 0:
             avg_loss = total_train_loss / len(dataloader)
-            print(f"Epoch {epoch}/{num_epochs}, training loss: {avg_loss}")
+            print(f"Epoch {epoch}/{epochs}, training loss: {avg_loss}")
             writer.add_scalar("total_train_loss", avg_loss, epoch)
 
     torch.save(model.state_dict(), checkpoint_path)
