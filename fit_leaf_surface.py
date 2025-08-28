@@ -103,6 +103,8 @@ def extract_mesh(
 
 def main(
     results_folder="results/static_leaves/siren/dry_runs",
+    leaf_sequence=0,
+    timepoint=0,
     epochs=100_000,
     off_surface_points=10_000,
     sampling_strategy="mixed",
@@ -114,8 +116,8 @@ def main(
 
     # Get leaf point cloud to fit
     sample, leaf_name = get_leaf(
-        seq_idx=0,
-        timepoint=0,
+        seq_idx=leaf_sequence,
+        timepoint=timepoint,
         with_normals=True,
         visualize=False,
         off_surface_points=off_surface_points,
@@ -261,9 +263,26 @@ if __name__ == "__main__":
     parser.add_argument(
         "--results_folder", type=str, default="results/static_leaves/siren/dry_runs"
     )
-    parser.add_argument("--epochs", type=int, default=100_000)
-    parser.add_argument("--sampling_strategy", type=str, default="uniform")
-    parser.add_argument("--off_surface_points", type=int, default=10_000)
+    parser.add_argument(
+        "--leaf_sequence", type=int, default=0, help="Leaf sequence index"
+    )
+    parser.add_argument("--timepoint", type=int, default=0, help="Timepoint index")
+    parser.add_argument(
+        "--epochs", type=int, default=100_000, help="Number of training epochs"
+    )
+    parser.add_argument(
+        "--sampling_strategy",
+        type=str,
+        default="mixed",
+        help="Sampling strategy for off-surface points. Mixed follows IGR with uniform sampling + gaussian sampling for near-surface points.",
+        choices=["uniform", "mixed"],
+    )
+    parser.add_argument(
+        "--off_surface_points",
+        type=int,
+        default=10_000,
+        help="Number of off-surface points to sample. If using mixed strategy, this is the total number of points sampled (half from each).",
+    )
     parser.add_argument("--resolution", type=int, default=512)
     parser.add_argument(
         "--logger", type=str, default="wandb", choices=["tensorboard", "wandb"]
@@ -272,6 +291,8 @@ if __name__ == "__main__":
 
     main(
         results_folder=args.results_folder,
+        leaf_sequence=args.leaf_sequence,
+        timepoint=args.timepoint,
         epochs=args.epochs,
         sampling_strategy=args.sampling_strategy,
         off_surface_points=args.off_surface_points,
