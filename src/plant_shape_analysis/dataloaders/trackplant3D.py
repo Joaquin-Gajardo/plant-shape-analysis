@@ -190,6 +190,21 @@ class LeafSequencesDataset(Dataset):
         if self.estimate_normals:
             self._estimate_normals()
 
+    def get_sequence_names(self, sequence_list: Optional[list] = None):
+        """Get all sequence names"""
+        sequence = sequence_list or self.leaf_timeseries
+        return [ts["sequence_name"] for ts in sequence]
+
+    def get_sequences_by_treatment(
+        self, treatment: str, sequence_list: Optional[list] = None
+    ):
+        """Get all sequences for a specific treatment"""
+        sequences = []
+        for ts in sequence_list or self.leaf_timeseries:
+            if treatment in ts["sequence_name"]:
+                sequences.append(ts)
+        return sequences
+
     def _build_leaf_timeseries(self):
         """Build individual leaf timeseries from plant sequences"""
         leaf_timeseries = []
@@ -210,7 +225,7 @@ class LeafSequencesDataset(Dataset):
                         leaf_timeseries.append(
                             {
                                 "sequence_name": sequence_name,
-                                "leaf_id": leaf_id,
+                                "leaf_id": int(leaf_id),
                                 "timepoints": timepoints,
                             }
                         )
