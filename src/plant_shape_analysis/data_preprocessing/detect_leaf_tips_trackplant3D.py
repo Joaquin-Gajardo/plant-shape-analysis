@@ -209,13 +209,17 @@ def map_labels_to_colors(labels: np.ndarray) -> np.ndarray:
     Returns:
         colors: numpy array of shape (n_points, 3) with RGB colors
     """
+    assert isinstance(labels, np.ndarray), "Labels must be a numpy array"
+    assert (
+        labels.ndim == 1 or labels.ndim == 2 and labels.shape[1] == 1
+    ), "Labels must be 1D or 2D column vector"
     colors = np.zeros((len(labels), 3))
-    for i, label in enumerate(labels):
+    for i, label in enumerate(labels.squeeze()):
         if label in COLOR_MAP:
             colors[i] = COLOR_MAP[label]
         else:
-            # Default color for unknown labels (black)
-            colors[i] = np.array([0.0, 0.0, 0.0])
+            # Default color for unknown labels (gray)
+            colors[i] = np.array([0.5, 0.5, 0.5])
     return colors
 
 
@@ -223,7 +227,6 @@ def visualize_plant_open3d(
     points: np.ndarray,
     labels: Optional[np.ndarray] = None,
     keypoint_indices: Optional[list[int]] = None,
-    colors: Optional[np.ndarray] = None,
     window_name: str = "Plant Keypoints Visualization",
 ):
     """
@@ -233,7 +236,6 @@ def visualize_plant_open3d(
         points: numpy array of shape (n_points, 3)
         labels: numpy array of shape (n_points,) with semantic labels
         keypoint_indices: indices of keypoint to highlight
-        colors: optional numpy array of shape (n_points, 3) for custom colors
         window_name: name for the Open3D visualization window
     """
 
