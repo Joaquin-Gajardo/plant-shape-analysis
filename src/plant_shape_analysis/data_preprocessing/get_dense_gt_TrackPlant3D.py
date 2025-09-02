@@ -197,7 +197,6 @@ def process_pairs(
     source_files: list[Path],
     target_files: list[Path],
     save_path: str | Path,
-    save_combined: bool = False,
 ) -> dict:
     """
     Align source points to target points in batches using ICP, followed by
@@ -281,10 +280,10 @@ def process_pairs(
     if (save_path.parent / report_name).exists():
         with open(f"{save_path.parent / report_name}", "r") as f:
             existing_report = json.load(f)
-            results_report = {**existing_report, **results_report}
+            combined_results_report = {**existing_report, **results_report.copy()}
 
     with open(save_path.parent / report_name, "w") as f:
-        json.dump(results_report, f, indent=2)
+        json.dump(combined_results_report, f, indent=2)
 
     return results_report
 
