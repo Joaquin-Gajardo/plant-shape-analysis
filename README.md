@@ -8,8 +8,7 @@ conda create -n plant-shape-analysis python==3.12
 conda activate plant-shape-analysis
 conda install -c conda-forge gcc gxx  # For X forwarding open3d window with PuTTy and XLaunch (optional)
 conda install ipykernel # for Jupyter notebooks in VSCode
-pip install -e .  # Install the package in editable mode
-```
+pip install -e . # install package
 
 <details>
 <summary>labelCloud fork for labelling keypoints (optional)</summary>
@@ -21,7 +20,7 @@ cd labelCloud-dev
 conda create -n labelCloud-dev python=3.9
 conda activate labelCloud-dev
 pip install -r requirements.txt
-pip install -e . # editable mode works
+pip install -e . # install package
 conda install -c conda-forge gcc gxx # For X forwarding open3d window with PuTTy and XLaunch (optional)
 ```
 Usage:
@@ -41,4 +40,4 @@ Usage:
 
 Using Siren (Sitzmann et al., 2020):
 ```bash
-python fit_leaf_surface.py # will get a leaf from a random sequence and timepoint
+python fit_leaf_surface.py # By defaults using first leaf, run with --help to see CL options

@@ -8,7 +8,6 @@ from scipy.spatial import cKDTree
 
 from plant_shape_analysis.data_preprocessing.detect_leaf_tips_trackplant3D import (
     load_point_cloud_from_txt,
-    visualize_plant_open3d,
 )
 from plant_shape_analysis.dataloaders.trackplant3D import PlantSequencesDataset
 from plant_shape_analysis.utils.metrics import chamfer_distance
