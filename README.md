@@ -9,6 +9,7 @@ conda activate plant-shape-analysis
 conda install -c conda-forge gcc gxx  # For X forwarding open3d window with PuTTy and XLaunch (optional)
 conda install ipykernel # for Jupyter notebooks in VSCode
 pip install -e . # install package
+```
 
 <details>
 <summary>labelCloud fork for labelling keypoints (optional)</summary>
