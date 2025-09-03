@@ -92,7 +92,6 @@ class PlantSequencesDataset(Dataset):
         """Load dense point cloud for a specific sequence and day if available"""
         crop_name = file_path.parent.name
         dense_file_path = self.dense_path / crop_name / file_path.name
-        
         if dense_file_path.exists():
             return self.load_point_cloud(dense_file_path)
         return None, None
@@ -496,7 +495,9 @@ class LeafSequencesDataset(Dataset):
                 if i == reference_idx:
                     aligned_dense_points = dense_centered + ref_center
                 else:
-                    aligned_dense_points = dense_centered @ rotation_matrix.T + ref_center
+                    aligned_dense_points = (
+                        dense_centered @ rotation_matrix.T + ref_center
+                    )
 
             # Transform leaf tip if it exists
             aligned_leaf_tip = None
