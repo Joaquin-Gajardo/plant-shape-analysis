@@ -16,6 +16,7 @@ class PlantSequencesDataset(Dataset):
     def __init__(self, dataset_path):
         self.point_clouds_path = Path(dataset_path) / "gt_corrected_v1"
         self.leaf_tips_path = Path(dataset_path) / "keypoints" / "leaf_tips"
+        self.dense_path = Path(dataset_path) / "dense"
 
         # Organize files into sequences
         self.sequences = self._organize_sequences()
@@ -87,6 +88,15 @@ class PlantSequencesDataset(Dataset):
         labels = data[:, 3].astype(int)  # labels
         return points, labels
 
+    def load_dense_point_cloud(self, file_path):
+        """Load dense point cloud for a specific sequence and day if available"""
+        crop_name = file_path.parent.name
+        dense_file_path = self.dense_path / crop_name / file_path.name
+        
+        if dense_file_path.exists():
+            return self.load_point_cloud(dense_file_path)
+        return None, None
+
     def load_leaf_tips(self, point_cloud_path):
         """Load leaf tips for a specific sequence and day"""
         crop_name = point_cloud_path.parent.name
@@ -120,6 +130,9 @@ class PlantSequencesDataset(Dataset):
             # Load point cloud
             points, labels = self.load_point_cloud(file_path)
 
+            # Load dense point cloud if available
+            dense_points, dense_labels = self.load_dense_point_cloud(file_path)
+
             # Load leaf tips if available
             leaf_tip_idxs, leaf_tip_coordinates = self.load_leaf_tips(file_path)
             if leaf_tip_idxs.size > 0:
@@ -144,6 +157,8 @@ class PlantSequencesDataset(Dataset):
                     "day": day,
                     "points": points,
                     "labels": labels,
+                    "dense_points": dense_points,
+                    "dense_labels": dense_labels,
                     "leaf_tip_idxs": leaf_tip_idxs,
                     "file_path": file_path,
                 }
@@ -240,6 +255,8 @@ class LeafSequencesDataset(Dataset):
             day = timepoint_data["day"]
             points = timepoint_data["points"]
             labels = timepoint_data["labels"]
+            dense_points = timepoint_data["dense_points"]
+            dense_labels = timepoint_data["dense_labels"]
             leaf_tip_idxs = timepoint_data["leaf_tip_idxs"]
 
             # Get unique leaf labels (excluding stem label 0)
@@ -249,6 +266,13 @@ class LeafSequencesDataset(Dataset):
                 # Extract points for this leaf
                 leaf_mask = labels == leaf_label
                 leaf_points = points[leaf_mask]
+
+                # Extract dense points for this leaf if available
+                dense_leaf_points = None
+                if dense_points is not None and dense_labels is not None:
+                    dense_leaf_mask = dense_labels == leaf_label
+                    if np.any(dense_leaf_mask):
+                        dense_leaf_points = dense_points[dense_leaf_mask]
 
                 # Find leaf tip if available
                 leaf_tip_coords = None
@@ -264,6 +288,7 @@ class LeafSequencesDataset(Dataset):
                     {
                         "day": day,
                         "points": leaf_points,
+                        "dense_points": dense_leaf_points,
                         "leaf_tip": leaf_tip_coords,
                         "file_path": timepoint_data["file_path"],
                     }
@@ -462,6 +487,17 @@ class LeafSequencesDataset(Dataset):
                 # Apply rotation and translate to reference center
                 aligned_points = centered @ rotation_matrix.T + ref_center
 
+            # Transform dense points if they exist
+            aligned_dense_points = None
+            if tp.get("dense_points") is not None:
+                dense_points = tp["dense_points"]
+                dense_center = np.mean(dense_points, axis=0)
+                dense_centered = dense_points - dense_center
+                if i == reference_idx:
+                    aligned_dense_points = dense_centered + ref_center
+                else:
+                    aligned_dense_points = dense_centered @ rotation_matrix.T + ref_center
+
             # Transform leaf tip if it exists
             aligned_leaf_tip = None
             if tp["leaf_tip"] is not None:
@@ -476,6 +512,7 @@ class LeafSequencesDataset(Dataset):
             # Preserve original timepoint structure
             aligned_tp = tp.copy()
             aligned_tp["points"] = aligned_points
+            aligned_tp["dense_points"] = aligned_dense_points
             aligned_tp["leaf_tip"] = aligned_leaf_tip
             aligned_timepoints.append(aligned_tp)
             transformations.append(
