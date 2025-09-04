@@ -224,7 +224,7 @@ class PointCloudSiren(Dataset):
             local_coords = np.random.normal(
                 loc=centers, scale=std_devs[:, np.newaxis], size=(n_local, 3)
             )
-            local_coords = global_coords + local_coords
+            #  local_coords = global_coords + local_coords # NOTE: this seems like a bug
 
             off_surface_coords = np.concatenate([local_coords, global_coords], axis=0)
             off_surface_normals = np.ones((self.off_surface_points, 3)) * -1
