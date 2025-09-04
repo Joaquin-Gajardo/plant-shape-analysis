@@ -27,6 +27,7 @@ def get_leaf(
     visualize: bool = True,
     off_surface_points: int = 10_000,
     sampling_strategy: str = "mixed",
+    dense_points: bool = False,
 ):
     """Get a leaf dataset with the fixed PointCloudSiren class"""
 
@@ -38,7 +39,13 @@ def get_leaf(
     if timepoint is None:
         timepoint = random.randint(0, len(leaf_sequences[seq_idx]["timepoints"]) - 1)
 
-    point_cloud = leaf_sequences[seq_idx]["timepoints"][timepoint]["points"]
+    points_key = "dense_points" if dense_points else "points"
+    point_cloud = leaf_sequences[seq_idx]["timepoints"][timepoint][points_key]
+
+    if point_cloud is None:
+        raise ValueError(
+            f"Leaf sequence {seq_idx}, timepoint {timepoint} does not have '{points_key}' points."
+        )
     print(
         f"Loaded point cloud of leaf sequence {seq_idx}, timepoint {timepoint} with shape: {point_cloud.shape}"
     )
@@ -110,6 +117,7 @@ def main(
     sampling_strategy="mixed",
     resolution=512,
     logger="wandb",
+    dense_points=False,
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -122,6 +130,7 @@ def main(
         visualize=False,
         off_surface_points=off_surface_points,
         sampling_strategy=sampling_strategy,
+        dense_points=dense_points,
     )
 
     # Model and optimizer
@@ -280,12 +289,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "--off_surface_points",
         type=int,
-        default=10_000,
+        default=50_000,
         help="Number of off-surface points to sample. If using mixed strategy, this is the total number of points sampled (half from each).",
     )
     parser.add_argument("--resolution", type=int, default=512)
     parser.add_argument(
         "--logger", type=str, default="wandb", choices=["tensorboard", "wandb"]
+    )
+    parser.add_argument(
+        "--dense_points", action="store_true", help="Use dense points if available"
     )
     args = parser.parse_args()
 
@@ -298,4 +310,5 @@ if __name__ == "__main__":
         off_surface_points=args.off_surface_points,
         resolution=args.resolution,
         logger=args.logger,
+        dense_points=args.dense_points,
     )

@@ -286,6 +286,7 @@ class LeafSequencesDataset(Dataset):
                 leaf_tracks[leaf_label].append(
                     {
                         "day": day,
+                        "leaf_id": int(leaf_label),
                         "points": leaf_points,
                         "dense_points": dense_leaf_points,
                         "leaf_tip": leaf_tip_coords,
