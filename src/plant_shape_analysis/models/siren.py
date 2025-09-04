@@ -25,6 +25,7 @@ SOFTWARE.
 """
 
 from collections import OrderedDict
+from typing import Optional
 
 import numpy as np
 import torch
@@ -141,8 +142,8 @@ class PointCloudSiren(Dataset):
     def __init__(
         self,
         point_cloud,
-        on_surface_points,
-        off_surface_points=10_000,
+        on_surface_points: int,
+        off_surface_points: Optional[int] = None,
         keep_aspect_ratio=True,
         sampling_strategy="mixed",
         k_neighbors=50,
@@ -190,10 +191,14 @@ class PointCloudSiren(Dataset):
 
     def __getitem__(self, idx):
         point_cloud_size = self.coords.shape[0]
+        if self.off_surface_points is None:
+            self.off_surface_points = self.on_surface_points
         total_samples = self.on_surface_points + self.off_surface_points
 
         # On surface points
-        rand_idcs = np.random.choice(point_cloud_size, size=self.on_surface_points)
+        rand_idcs = np.random.choice(
+            point_cloud_size, size=self.on_surface_points
+        )  # on surface points is the total number of points anyways, since the leaves are very sparse
         on_surface_coords = self.coords[rand_idcs, :]
         on_surface_normals = self.normals[rand_idcs, :]
 

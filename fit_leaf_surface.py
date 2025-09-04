@@ -2,6 +2,7 @@ import random
 from argparse import ArgumentParser
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -25,7 +26,7 @@ def get_leaf(
     timepoint: int = None,
     with_normals: bool = True,
     visualize: bool = True,
-    off_surface_points: int = 10_000,
+    off_surface_points: Optional[int] = None,
     sampling_strategy: str = "mixed",
     dense_points: bool = False,
 ):
@@ -113,7 +114,7 @@ def main(
     leaf_sequence=0,
     timepoint=0,
     epochs=100_000,
-    off_surface_points=10_000,
+    off_surface_points=None,
     sampling_strategy="mixed",
     resolution=512,
     logger="wandb",
@@ -289,7 +290,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--off_surface_points",
         type=int,
-        default=50_000,
+        default=None,
         help="Number of off-surface points to sample. If using mixed strategy, this is the total number of points sampled (half from each).",
     )
     parser.add_argument("--resolution", type=int, default=512)
