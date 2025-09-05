@@ -115,6 +115,9 @@ def main(
     results_folder="results/static_leaves/siren/dry_runs",
     leaf_sequence=0,
     timepoint=0,
+    hidden_neurons=128,
+    hidden_layers=3,
+    lr=1e-4,
     epochs=100_000,
     off_surface_points=None,
     sampling_strategy="mixed",
@@ -139,15 +142,15 @@ def main(
     # Model and optimizer
     model = Siren(
         in_features=3,
-        hidden_features=128,
-        hidden_layers=3,
+        hidden_features=args.hidden_neurons,
+        hidden_layers=args.hidden_layers,
         out_features=1,
         outermost_linear=True,
         first_omega_0=30,
         hidden_omega_0=30,
     ).to(device)
     print(model)
-    optimizer = torch.optim.Adam(lr=1e-4, params=model.parameters())
+    optimizer = torch.optim.Adam(lr=lr, params=model.parameters())
 
     dataloader = DataLoader(
         sample, shuffle=True, batch_size=1, pin_memory=True, num_workers=0
@@ -179,9 +182,9 @@ def main(
                 "epochs": epochs,
                 "off_surface_points": off_surface_points,
                 "sampling_strategy": sampling_strategy,
-                "hidden_features": 128,
-                "hidden_layers": 3,
-                "learning_rate": 1e-4,
+                "hidden_features": hidden_neurons,
+                "hidden_layers": hidden_layers,
+                "learning_rate": lr,
             },
         )
 
@@ -287,6 +290,16 @@ if __name__ == "__main__":
         "--epochs", type=int, default=100_000, help="Number of training epochs"
     )
     parser.add_argument(
+        "--hidden_neurons",
+        type=int,
+        default=128,
+        help="Number of hidden neurons per layer in MLP",
+    )
+    parser.add_argument(
+        "--hidden_layers", type=int, default=3, help="Number of hidden layers in MLP"
+    )
+    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
+    parser.add_argument(
         "--sampling_strategy",
         type=str,
         default="mixed",
@@ -312,6 +325,8 @@ if __name__ == "__main__":
         results_folder=args.results_folder,
         leaf_sequence=args.leaf_sequence,
         timepoint=args.timepoint,
+        hidden_neurons=args.hidden_neurons,
+        hidden_layers=args.hidden_layers,
         epochs=args.epochs,
         sampling_strategy=args.sampling_strategy,
         off_surface_points=args.off_surface_points,
