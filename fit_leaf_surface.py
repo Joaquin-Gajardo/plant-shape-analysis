@@ -290,8 +290,8 @@ if __name__ == "__main__":
         "--sampling_strategy",
         type=str,
         default="mixed",
-        help="Sampling strategy for off-surface points. Mixed follows IGR with uniform sampling + gaussian sampling for near-surface points.",
-        choices=["uniform", "mixed"],
+        help="Sampling strategy for off-surface points. Gaussian follows IGR-style gaussian sampling for near-surface points, and mixed does both (See Prasad, 2022. https://openreview.net/forum?id=F4eTwol9qne).",
+        choices=["uniform", "gaussian", "mixed"],
     )
     parser.add_argument(
         "--off_surface_points",

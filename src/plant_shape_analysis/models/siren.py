@@ -175,7 +175,7 @@ class PointCloudSiren(Dataset):
         self.off_surface_local_points_ratio = off_surface_local_points_ratio
 
         # Pre-compute k-nearest neighbor distances for Gaussian sampling
-        if sampling_strategy == "mixed":
+        if sampling_strategy in ["gaussian", "mixed"]:
             self._compute_knn_distances()
 
         print("Off surface sampling strategy: ", self.sampling_strategy)
@@ -209,7 +209,19 @@ class PointCloudSiren(Dataset):
             )
             off_surface_normals = np.ones((self.off_surface_points, 3)) * -1
 
+        elif self.sampling_strategy == "gaussian":
+            # IGR-style sampling: sample off-surface points from Gaussian around surface points
+            n_local = self.off_surface_points
+            center_indices = np.random.choice(point_cloud_size, size=n_local)
+            centers = self.coords[center_indices]
+            std_devs = self.knn_distances[center_indices]
+            off_surface_coords = np.random.normal(
+                loc=centers, scale=std_devs[:, np.newaxis], size=(n_local, 3)
+            )
+            off_surface_normals = np.ones((n_local, 3)) * -1
+
         elif self.sampling_strategy == "mixed":
+            # See Prasad, 2022. Deep implicit surface reconstruction of 3D plant geometry from point cloud. https://openreview.net/forum?id=F4eTwol9qne
             # Split off-surface points into local and global
             n_local = int(self.off_surface_points * self.off_surface_local_points_ratio)
             n_global = self.off_surface_points - n_local
@@ -224,7 +236,6 @@ class PointCloudSiren(Dataset):
             local_coords = np.random.normal(
                 loc=centers, scale=std_devs[:, np.newaxis], size=(n_local, 3)
             )
-            #  local_coords = global_coords + local_coords # NOTE: this seems like a bug
 
             off_surface_coords = np.concatenate([local_coords, global_coords], axis=0)
             off_surface_normals = np.ones((self.off_surface_points, 3)) * -1
