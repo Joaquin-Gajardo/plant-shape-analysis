@@ -50,7 +50,9 @@ def get_leaf(
     print(
         f"Loaded point cloud of leaf sequence {seq_idx}, timepoint {timepoint} with shape: {point_cloud.shape}"
     )
-    leaf_name = f"{leaf_sequences[seq_idx]['sequence_name']}_leaf{int(leaf_sequences[seq_idx]['leaf_id'])}_day{timepoint}"
+    leaf_name = f"{leaf_sequences[seq_idx]['sequence_name']}_day{timepoint}_leaf{int(leaf_sequences[seq_idx]['leaf_id'])}"
+    if dense_points:
+        leaf_name += "-dense"
 
     if with_normals:
         pcd = o3d.geometry.PointCloud()
@@ -153,7 +155,11 @@ def main(
 
     # Define paths
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
-    experiment_name = f"{now}_{leaf_name}-{model.model_name}_{epochs}epochs_{off_surface_points}offpoints_{sampling_strategy}"
+    experiment_name = (
+        f"{now}_{leaf_name}-{model.model_name}_{epochs}epochs_{sampling_strategy}"
+    )
+    if off_surface_points is not None:
+        experiment_name += f"_{off_surface_points}offpoints"
     experiment_path = Path(results_folder) / experiment_name
     experiment_path.mkdir(parents=True, exist_ok=True)
     checkpoint_path = experiment_path / (experiment_name + ".pth")
