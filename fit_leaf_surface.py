@@ -26,7 +26,6 @@ def get_leaf(
     timepoint: int = None,
     with_normals: bool = True,
     visualize: bool = True,
-    off_surface_points: Optional[int] = None,
     sampling_strategy: str = "mixed",
     dense_points: bool = False,
 ):
@@ -68,7 +67,6 @@ def get_leaf(
     dataset = PointCloudSiren(
         point_cloud,
         len(point_cloud),
-        off_surface_points=off_surface_points,
         sampling_strategy=sampling_strategy,
     )
 
@@ -118,7 +116,6 @@ def main(
     hidden_layers=3,
     lr=1e-4,
     epochs=100_000,
-    off_surface_points=None,
     sampling_strategy="mixed",
     resolution=512,
     logger="wandb",
@@ -137,7 +134,6 @@ def main(
         timepoint=timepoint,
         with_normals=True,
         visualize=False,
-        off_surface_points=off_surface_points,
         sampling_strategy=sampling_strategy,
         dense_points=dense_points,
     )
@@ -162,8 +158,6 @@ def main(
     # Define paths
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
     experiment_name = f"{now}_{leaf_name}-{model.model_name}-{hidden_layers}HL-{hidden_neurons}HU_{epochs}epochs_{sampling_strategy}"
-    if off_surface_points is not None:
-        experiment_name += f"_{off_surface_points}offpoints"
     experiment_path = Path(results_folder) / experiment_name
     experiment_path.mkdir(parents=True, exist_ok=True)
     checkpoint_path = experiment_path / (experiment_name + ".pth")
@@ -181,7 +175,6 @@ def main(
                 "leaf_name": leaf_name,
                 "model": model.model_name,
                 "epochs": epochs,
-                "off_surface_points": off_surface_points,
                 "sampling_strategy": sampling_strategy,
                 "hidden_features": hidden_neurons,
                 "hidden_layers": hidden_layers,
@@ -334,14 +327,8 @@ if __name__ == "__main__":
         "--sampling_strategy",
         type=str,
         default="mixed",
-        help="Sampling strategy for off-surface points. Gaussian follows IGR-style gaussian sampling for near-surface points, and mixed does both (See Prasad, 2022. https://openreview.net/forum?id=F4eTwol9qne).",
-        choices=["uniform", "gaussian", "mixed"],
-    )
-    parser.add_argument(
-        "--off_surface_points",
-        type=int,
-        default=None,
-        help="Number of off-surface points to sample. If using mixed strategy, this is the total number of points sampled (half from each).",
+        help="Sampling strategy for off-surface points. Uniform follow SIREN, mixed follows IGR (Gropp et al. 2020) sampling, and prasad follows Prasad, 2022 (https://openreview.net/forum?id=F4eTwol9qne).",
+        choices=["mixed", "uniform", "prasad"],
     )
     parser.add_argument("--resolution", type=int, default=512)
     parser.add_argument(
@@ -371,7 +358,6 @@ if __name__ == "__main__":
         hidden_layers=args.hidden_layers,
         epochs=args.epochs,
         sampling_strategy=args.sampling_strategy,
-        off_surface_points=args.off_surface_points,
         resolution=args.resolution,
         logger=args.logger,
         dense_points=args.dense_points,

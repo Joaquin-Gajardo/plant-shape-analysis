@@ -143,11 +143,11 @@ class PointCloudSiren(Dataset):
         self,
         point_cloud,
         on_surface_points: int,
-        off_surface_points: Optional[int] = None,
         keep_aspect_ratio=True,
         sampling_strategy="mixed",
+        local_sigma=0.01,
+        global_sigma=1.8,
         k_neighbors=50,
-        off_surface_local_points_ratio=0.5,
     ):
         super().__init__()
 
@@ -169,13 +169,13 @@ class PointCloudSiren(Dataset):
         self.coords *= 2.0
 
         self.on_surface_points = on_surface_points
-        self.off_surface_points = off_surface_points
         self.sampling_strategy = sampling_strategy
+        self.local_sigma = local_sigma
+        self.global_sigma = global_sigma
         self.k_neighbors = k_neighbors
-        self.off_surface_local_points_ratio = off_surface_local_points_ratio
 
         # Pre-compute k-nearest neighbor distances for Gaussian sampling
-        if sampling_strategy in ["gaussian", "mixed"]:
+        if sampling_strategy in ["prasad"]:
             self._compute_knn_distances()
 
         print("Off surface sampling strategy: ", self.sampling_strategy)
@@ -191,40 +191,51 @@ class PointCloudSiren(Dataset):
 
     def __getitem__(self, idx):
         point_cloud_size = self.coords.shape[0]
-        if self.off_surface_points is None:
-            self.off_surface_points = self.on_surface_points
-        total_samples = self.on_surface_points + self.off_surface_points
 
         # On surface points
         rand_idcs = np.random.choice(
             point_cloud_size, size=self.on_surface_points
-        )  # on surface points is the total number of points anyways, since the leaves are very sparse
+        )  # NOTE: on surface points is the total number of points anyways, since the leaves are very sparse so we need all points
         on_surface_coords = self.coords[rand_idcs, :]
         on_surface_normals = self.normals[rand_idcs, :]
 
         # Off-surface points
         if self.sampling_strategy == "uniform":
-            off_surface_coords = np.random.uniform(
-                -1, 1, size=(self.off_surface_points, 3)
-            )
-            off_surface_normals = np.ones((self.off_surface_points, 3)) * -1
+            # SIREN strategy: sample same amount of off-surface points as on-surface points, from uniform distribution.
+            # See Sitzmann et al., 2020. Implicit Neural Representations
+            # with Periodic Activation Functions. https://github.com/vsitzmann/siren/blob/master/dataio.py#L420
 
-        elif self.sampling_strategy == "gaussian":
-            # IGR-style sampling: sample off-surface points from Gaussian around surface points
-            n_local = self.off_surface_points
-            center_indices = np.random.choice(point_cloud_size, size=n_local)
-            centers = self.coords[center_indices]
-            std_devs = self.knn_distances[center_indices]
-            off_surface_coords = np.random.normal(
-                loc=centers, scale=std_devs[:, np.newaxis], size=(n_local, 3)
+            off_surface_coords = np.random.uniform(
+                -1, 1, size=(self.on_surface_points, 3)
             )
-            off_surface_normals = np.ones((n_local, 3)) * -1
+            off_surface_normals = np.ones_like(off_surface_coords) * -1
 
         elif self.sampling_strategy == "mixed":
+            # IGR sampling strategy: same amount local points (gaussian) and 1/8 global points (uniform)
+            # See Gropp et al., 2020. Implicit Geometric Regularization for Learning Shapes from Point Clouds. https://arxiv.org/abs/2002.10099
+            n_local = self.on_surface_points
+            n_global = self.on_surface_points // 8
+
+            # Local off-surface points (gaussian offset from on-surface points)
+            local_coords = (
+                on_surface_coords + np.random.randn(n_local, 3) * self.local_sigma
+            )
+
+            # Global off-surface points: uniform random points in [-global_sigma, global_sigma] for each dimension
+            global_coords = np.random.uniform(-1, 1, size=(n_global, 3))
+            # global_coords = (
+            #     np.random.rand(n_global, 3) * (self.global_sigma * 2)
+            #     - self.global_sigma
+            # )
+
+            off_surface_coords = np.concatenate([local_coords, global_coords], axis=0)
+            off_surface_normals = np.ones_like(off_surface_coords) * -1
+
+        elif self.sampling_strategy == "prasad":
             # See Prasad, 2022. Deep implicit surface reconstruction of 3D plant geometry from point cloud. https://openreview.net/forum?id=F4eTwol9qne
-            # Split off-surface points into local and global
-            n_local = int(self.off_surface_points * self.off_surface_local_points_ratio)
-            n_global = self.off_surface_points - n_local
+            # They use same amount of on-surface, local off-surface and global off-surface points
+            n_local = self.on_surface_points
+            n_global = self.on_surface_points
 
             # Global off-surface points: uniform distribution
             global_coords = np.random.uniform(-1, 1, size=(n_global, 3))
@@ -238,15 +249,15 @@ class PointCloudSiren(Dataset):
             )
 
             off_surface_coords = np.concatenate([local_coords, global_coords], axis=0)
-            off_surface_normals = np.ones((self.off_surface_points, 3)) * -1
+            off_surface_normals = np.ones_like(off_surface_coords) * -1
         else:
             raise ValueError(f"Unknown sampling strategy: {self.sampling_strategy}")
 
-        sdf = np.zeros((total_samples, 1))  # on-surface = 0
-        sdf[self.on_surface_points :, :] = -1  # off-surface = -1
-
         coords = np.concatenate((on_surface_coords, off_surface_coords), axis=0)
         normals = np.concatenate((on_surface_normals, off_surface_normals), axis=0)
+
+        sdf = np.zeros((coords.shape[0], 1))  # on-surface = 0
+        sdf[self.on_surface_points :, :] = -1  # off-surface = -1
 
         return {"coords": torch.from_numpy(coords).float()}, {
             "sdf": torch.from_numpy(sdf).float(),
