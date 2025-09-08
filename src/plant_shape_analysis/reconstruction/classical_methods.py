@@ -292,6 +292,29 @@ def compute_mesh_area(points: np.ndarray, triangles: np.ndarray) -> float:
     return total_area
 
 
+def delaunay_mesh_reconstruction(points: np.ndarray, **kwargs) -> o3d.geometry.TriangleMesh:
+    """
+    Create Open3D mesh from Delaunay triangulation.
+    
+    Args:
+        points: Nx3 point cloud
+        **kwargs: Arguments passed to triangulate_delaunay
+        
+    Returns:
+        Open3D triangle mesh
+    """
+    triangles = triangulate_delaunay(points, **kwargs)
+    
+    # Create Open3D mesh
+    mesh = o3d.geometry.TriangleMesh()
+    mesh.vertices = o3d.utility.Vector3dVector(points[:, :3])
+    
+    if len(triangles) > 0:
+        mesh.triangles = o3d.utility.Vector3iVector(triangles)
+        mesh.compute_vertex_normals()
+    
+    return mesh
+
 def compute_leaf_area_delaunay(points: np.ndarray, **kwargs) -> float:
     """
     Compute leaf area using Delaunay triangulation method.
