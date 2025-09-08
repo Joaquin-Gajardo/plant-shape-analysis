@@ -220,8 +220,10 @@ def main(
             train_loss.backward()
             optimizer.step()
             total_train_loss += train_loss.item()
+
+            # For logging individual losses
             for k in total_losses:
-                total_losses[k] += losses[k].item()
+                total_losses[k] += weighted_losses[k].item()
 
         if epoch % 100 == 0 and epoch > 0:
             avg_loss = total_train_loss / len(dataloader)
