@@ -282,11 +282,11 @@ def sdf_loss(model_output, gt_sdf, gt_normals):
         torch.zeros_like(gradient[..., :1]),
     )
     grad_constraint = torch.abs(gradient.norm(dim=-1) - 1)
-    # Exp      # Lapl
-    # -----------------
+
+    # Return unweighted means; all weighting is handled in the training loop
     return {
-        "sdf": torch.abs(sdf_constraint).mean() * 3e3,  # 1e4      # 3e3
-        "inter": inter_constraint.mean() * 1e2,  # 1e2                   # 1e3
-        "normal_constraint": normal_constraint.mean() * 1e2,  # 1e2
-        "grad_constraint": grad_constraint.mean() * 5e1,
-    }  # 1e1      # 5e1
+        "sdf": torch.abs(sdf_constraint).mean(),
+        "inter": inter_constraint.mean(),
+        "normal_constraint": normal_constraint.mean(),
+        "grad_constraint": grad_constraint.mean(),
+    }

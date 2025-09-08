@@ -123,6 +123,10 @@ def main(
     resolution=512,
     logger="wandb",
     dense_points=False,
+    w_sdf=1.0,
+    w_inter=1.0,
+    w_normal=1.0,
+    w_grad=1.0,
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -141,8 +145,8 @@ def main(
     # Model and optimizer
     model = Siren(
         in_features=3,
-        hidden_features=args.hidden_neurons,
-        hidden_layers=args.hidden_layers,
+        hidden_features=hidden_neurons,
+        hidden_layers=hidden_layers,
         out_features=1,
         outermost_linear=True,
         first_omega_0=30,
@@ -188,8 +192,15 @@ def main(
 
     # Training loop
     model.train()
+
     for epoch in range(epochs):
         total_train_loss = 0.0
+        total_losses = {
+            "sdf": 0.0,
+            "inter": 0.0,
+            "normal_constraint": 0.0,
+            "grad_constraint": 0.0,
+        }
 
         for batch in dataloader:
             x, y = batch
@@ -198,21 +209,33 @@ def main(
             output = model(x["coords"].to(device))
             losses = sdf_loss(output, y["sdf"].to(device), y["normals"].to(device))
 
-            train_loss = 0.0
-            for _, loss in losses.items():
-                train_loss += loss.mean()
+            weighted_losses = {
+                "sdf": losses["sdf"] * w_sdf,
+                "inter": losses["inter"] * w_inter,
+                "normal_constraint": losses["normal_constraint"] * w_normal,
+                "grad_constraint": losses["grad_constraint"] * w_grad,
+            }
+            train_loss = sum(weighted_losses.values())
 
             train_loss.backward()
             optimizer.step()
             total_train_loss += train_loss.item()
+            for k in total_losses:
+                total_losses[k] += losses[k].item()
 
         if epoch % 100 == 0 and epoch > 0:
             avg_loss = total_train_loss / len(dataloader)
+            avg_losses = {k: total_losses[k] / len(dataloader) for k in total_losses}
             print(f"Epoch {epoch}/{epochs}, training loss: {avg_loss}")
+            print("  Loss breakdown:", {k: round(v, 4) for k, v in avg_losses.items()})
             if logger == "tensorboard" and writer:
                 writer.add_scalar("total_train_loss", avg_loss, epoch)
+                for k, v in avg_losses.items():
+                    writer.add_scalar(f"loss/{k}", v, epoch)
             elif logger == "wandb":
                 log_data = {"total_train_loss": avg_loss, "epoch": epoch}
+                for k, v in avg_losses.items():
+                    log_data[f"loss/{k}"] = v
 
                 # Log SDF cross-sections every 5000 epochs
                 if epoch % 5000 == 0 and epoch > 0:
@@ -242,8 +265,8 @@ def main(
                         temp_checkpoint,
                         temp_mesh_path,
                         model_kwargs={
-                            "hidden_features": args.hidden_neurons,
-                            "hidden_layers": args.hidden_layers,
+                            "hidden_features": hidden_neurons,
+                            "hidden_layers": hidden_layers,
                         },
                         N=128,
                         iso_level=0.0,
@@ -270,8 +293,8 @@ def main(
         checkpoint_path,
         out_mesh_path=experiment_path / f"mesh_res{resolution}.ply",
         model_kwargs={
-            "hidden_features": args.hidden_neurons,
-            "hidden_layers": args.hidden_layers,
+            "hidden_features": hidden_neurons,
+            "hidden_layers": hidden_layers,
         },
         N=resolution,
         format="ply",
@@ -325,6 +348,17 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dense_points", action="store_true", help="Use dense points if available"
     )
+    parser.add_argument("--w_sdf", type=float, default=3e3, help="Weight for sdf loss")
+    parser.add_argument(
+        "--w_inter", type=float, default=1e2, help="Weight for inter loss"
+    )
+    parser.add_argument(
+        "--w_normal", type=float, default=1e2, help="Weight for normal constraint loss"
+    )
+    parser.add_argument(
+        "--w_grad", type=float, default=5e1, help="Weight for grad constraint loss"
+    )
+
     args = parser.parse_args()
 
     main(
@@ -339,4 +373,8 @@ if __name__ == "__main__":
         resolution=args.resolution,
         logger=args.logger,
         dense_points=args.dense_points,
+        w_sdf=args.w_sdf,
+        w_inter=args.w_inter,
+        w_normal=args.w_normal,
+        w_grad=args.w_grad,
     )
