@@ -81,18 +81,21 @@ def extract_mesh(
     N: int = 512,
     iso_level: float = 0.0,
     format: str = "ply",
+    model_kwargs={
+        "in_features": 3,
+        "hidden_features": 128,
+        "hidden_layers": 3,
+        "out_features": 1,
+    },
 ):
     class SDFDecoder(torch.nn.Module):
         def __init__(self):
             super().__init__()
             self.model = Siren(
-                in_features=3,
-                hidden_features=128,
-                hidden_layers=3,
-                out_features=1,
-                outermost_linear=True,
-                first_omega_0=30,
-                hidden_omega_0=30,
+                in_features=model_kwargs.get("in_features"),
+                hidden_features=model_kwargs.get("hidden_features"),
+                hidden_layers=model_kwargs.get("hidden_layers"),
+                out_features=model_kwargs.get("out_features"),
             )
             if torch.cuda.is_available():
                 self.model.load_state_dict(
@@ -246,6 +249,10 @@ def main(
                         N=128,
                         iso_level=0.0,
                         format="obj",
+                        model_kwargs={
+                            "hidden_features": args.hidden_neurons,
+                            "hidden_layers": args.hidden_layers,
+                        },
                     )
 
                     if temp_mesh_path.exists():
@@ -269,6 +276,10 @@ def main(
         out_mesh_path=experiment_path / f"mesh_res{resolution}.ply",
         N=resolution,
         format="ply",
+        model_kwargs={
+            "hidden_features": args.hidden_neurons,
+            "hidden_layers": args.hidden_layers,
+        },
     )
 
     # Log final mesh to wandb
