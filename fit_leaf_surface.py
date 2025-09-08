@@ -157,9 +157,7 @@ def main(
 
     # Define paths
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
-    experiment_name = (
-        f"{now}_{leaf_name}-{model.model_name}_{epochs}epochs_{sampling_strategy}"
-    )
+    experiment_name = f"{now}_{leaf_name}-{model.model_name}-{hidden_layers}HL-{hidden_neurons}HU_{epochs}epochs_{sampling_strategy}"
     if off_surface_points is not None:
         experiment_name += f"_{off_surface_points}offpoints"
     experiment_path = Path(results_folder) / experiment_name
@@ -186,6 +184,7 @@ def main(
                 "learning_rate": lr,
             },
         )
+        wandb.watch(model, log="all", log_freq=100)
 
     # Training loop
     model.train()
