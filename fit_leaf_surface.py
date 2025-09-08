@@ -91,6 +91,7 @@ def extract_mesh(
                 hidden_features=model_kwargs.get("hidden_features", 128),
                 hidden_layers=model_kwargs.get("hidden_layers", 3),
                 out_features=model_kwargs.get("out_features", 1),
+                outermost_linear=model_kwargs.get("outermost_linear", True),
             )
             if torch.cuda.is_available():
                 self.model.load_state_dict(
