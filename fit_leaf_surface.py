@@ -78,24 +78,19 @@ def get_leaf(
 def extract_mesh(
     checkpoint_path: str,
     out_mesh_path: str,
+    model_kwargs: dict,
     N: int = 512,
     iso_level: float = 0.0,
     format: str = "ply",
-    model_kwargs={
-        "in_features": 3,
-        "hidden_features": 128,
-        "hidden_layers": 3,
-        "out_features": 1,
-    },
 ):
     class SDFDecoder(torch.nn.Module):
         def __init__(self):
             super().__init__()
             self.model = Siren(
-                in_features=model_kwargs.get("in_features"),
-                hidden_features=model_kwargs.get("hidden_features"),
-                hidden_layers=model_kwargs.get("hidden_layers"),
-                out_features=model_kwargs.get("out_features"),
+                in_features=model_kwargs.get("in_features", 3),
+                hidden_features=model_kwargs.get("hidden_features", 128),
+                hidden_layers=model_kwargs.get("hidden_layers", 3),
+                out_features=model_kwargs.get("out_features", 1),
             )
             if torch.cuda.is_available():
                 self.model.load_state_dict(
@@ -246,13 +241,13 @@ def main(
                     extract_mesh(
                         temp_checkpoint,
                         temp_mesh_path,
-                        N=128,
-                        iso_level=0.0,
-                        format="obj",
                         model_kwargs={
                             "hidden_features": args.hidden_neurons,
                             "hidden_layers": args.hidden_layers,
                         },
+                        N=128,
+                        iso_level=0.0,
+                        format="obj",
                     )
 
                     if temp_mesh_path.exists():
@@ -274,12 +269,12 @@ def main(
     extract_mesh(
         checkpoint_path,
         out_mesh_path=experiment_path / f"mesh_res{resolution}.ply",
-        N=resolution,
-        format="ply",
         model_kwargs={
             "hidden_features": args.hidden_neurons,
             "hidden_layers": args.hidden_layers,
         },
+        N=resolution,
+        format="ply",
     )
 
     # Log final mesh to wandb
