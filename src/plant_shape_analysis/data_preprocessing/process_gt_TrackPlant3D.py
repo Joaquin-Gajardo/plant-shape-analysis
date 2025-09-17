@@ -188,7 +188,7 @@ def process_all_dense_leaves(
 
 
 def inspect_leaf_quality(
-    base_path: Path = Path("data/TrackPlant3D"), crop_name="maize", max_samples=10
+    base_path: Path = Path("data/TrackPlant3D"), crop_name="maize", max_samples=-1
 ):
     """
     Manual quality inspection tool for checking mesh reconstruction results.
@@ -394,7 +394,7 @@ def main():
         "--crop", default="maize", help="Crop name (default: maize)"
     )
     inspect_parser.add_argument(
-        "--samples", type=int, default=10, help="Max samples to inspect (default: 10)"
+        "--samples", type=int, default=-1, help="Max samples to inspect (default: -1)"
     )
 
     # Interactive tuning
