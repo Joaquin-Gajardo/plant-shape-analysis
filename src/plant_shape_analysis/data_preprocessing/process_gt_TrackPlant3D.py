@@ -14,8 +14,7 @@ def extract_dense_leaves(base_path: Path = Path("data/TrackPlant3D")):
 
     dataset_path = base_path
     leaf_dataset = LeafSequencesDataset(
-        dataset_path,
-        min_timepoints=1,  # we get all leaves
+        dataset_path, min_timepoints=1, apply_pca_alignment=True  # we get all leaves
     )
     for seq in leaf_dataset:
         for scan in seq["timepoints"]:
@@ -106,10 +105,12 @@ def process_all_dense_leaves(
     poisson_depth=8,
     density_percentile=10,
     distance_multiplier=10.0,
+    version="v1",
 ):
     """Process all dense leaves with trimmed Poisson reconstruction"""
 
     print(f"Batch processing with parameters:")
+    print(f"  version={version}")
     print(f"  poisson_depth={poisson_depth}")
     print(f"  density_percentile={density_percentile}")
     print(f"  distance_multiplier={distance_multiplier}")
@@ -118,9 +119,9 @@ def process_all_dense_leaves(
     if not (base_path / "dense_leaves").exists():
         extract_dense_leaves(base_path)
 
-    # Create output directory for processed meshes and results
-    output_dir = base_path / "dense_leaf_meshes"
-    output_dir.mkdir(exist_ok=True)
+    # Create versioned output directory for processed meshes and results
+    output_dir = base_path / "dense_leaf_meshes" / "versions" / version
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # Process all crops
     for crop_dir in (base_path / "dense_leaves").iterdir():
@@ -187,182 +188,6 @@ def process_all_dense_leaves(
         print(f"Results saved to: {results_file}")
 
 
-def inspect_leaf_quality(
-    base_path: Path = Path("data/TrackPlant3D"), crop_name="maize", max_samples=-1
-):
-    """
-    Manual quality inspection tool for checking mesh reconstruction results.
-    Shows original point cloud and mesh side-by-side for visual assessment.
-    """
-
-    output_dir = base_path / "dense_leaf_meshes" / crop_name
-    dense_dir = base_path / "dense_leaves" / crop_name
-
-    if not output_dir.exists():
-        print(f"No processed meshes found in {output_dir}")
-        return
-
-    mesh_files = sorted(output_dir.glob("*_dense_mesh.ply"))
-    print(f"Found {len(mesh_files)} processed meshes")
-
-    for i, mesh_path in enumerate(mesh_files[:max_samples]):
-        # Find corresponding dense point cloud
-        dense_name = mesh_path.name.replace("_dense_mesh.ply", "_dense.ply")
-        dense_path = dense_dir / dense_name
-
-        if not dense_path.exists():
-            print(f"Warning: Could not find original point cloud for {mesh_path.name}")
-            continue
-
-        print(
-            f"\n=== Inspecting {i+1}/{min(max_samples, len(mesh_files))}: {mesh_path.name} ==="
-        )
-
-        # Load point cloud and mesh
-        pcd = o3d.io.read_point_cloud(str(dense_path))
-        mesh = o3d.io.read_triangle_mesh(str(mesh_path))
-
-        # Color them differently for visualization
-        pcd.paint_uniform_color([0.7, 0.7, 0.7])  # Gray for points
-        mesh.paint_uniform_color([0.0, 0.7, 0.0])  # Green for mesh
-
-        print(f"Point cloud: {len(pcd.points)} points")
-        print(f"Mesh: {len(mesh.vertices)} vertices, {len(mesh.triangles)} triangles")
-        print(f"Surface area: {mesh.get_surface_area():.2f}")
-
-        # Show visualization
-        print("Press Q to close and continue to next leaf...")
-        o3d.visualization.draw_geometries(
-            [pcd, mesh],
-            window_name=f"Quality Check: {mesh_path.name}",
-            point_show_normal=False,
-        )
-
-        # Ask for user feedback
-        response = input(
-            "Quality assessment (g=good, b=bad, s=skip remaining): "
-        ).lower()
-        if response == "s":
-            break
-        elif response == "b":
-            print(f"  ❌ Marked {mesh_path.name} as poor quality")
-        else:
-            print(f"  ✅ Marked {mesh_path.name} as good quality")
-
-
-def reprocess_with_custom_params(
-    file_path: Path,
-    poisson_depth=8,
-    density_percentile=10,
-    distance_multiplier=10.0,
-    save_result=True,
-):
-    """
-    Reprocess a specific leaf with custom parameters.
-    Useful for fine-tuning parameters on problematic leaves.
-    """
-
-    print(f"Reprocessing {file_path.name} with custom parameters:")
-    print(f"  poisson_depth={poisson_depth}")
-    print(f"  density_percentile={density_percentile}")
-    print(f"  distance_multiplier={distance_multiplier}")
-
-    # Load and process
-    pcd = load_leaf_point_cloud(file_path)
-    mesh, distances = custom_trimmed_poisson(
-        pcd, poisson_depth, density_percentile, distance_multiplier
-    )
-
-    surface_area = mesh.get_surface_area()
-    print(f"Surface area: {surface_area:.2f}")
-
-    # Visualize result
-    pcd.paint_uniform_color([0.7, 0.7, 0.7])
-    mesh.paint_uniform_color([0.0, 0.7, 0.0])
-    o3d.visualization.draw_geometries([pcd, mesh])
-
-    if save_result:
-        # Save with parameter suffix
-        output_path = (
-            file_path.parent.parent.parent / "dense_leaf_meshes" / file_path.parent.name
-        )
-        output_path.mkdir(parents=True, exist_ok=True)
-
-        mesh_name = file_path.stem.replace(
-            "_dense",
-            f"_mesh_d{poisson_depth}_p{density_percentile}_m{distance_multiplier:.1f}.ply",
-        )
-        mesh_path = output_path / mesh_name
-
-        o3d.io.write_triangle_mesh(str(mesh_path), mesh)
-        print(f"Saved custom mesh to: {mesh_path}")
-
-    return mesh, surface_area
-
-
-def interactive_parameter_tuning(file_path: Path):
-    """
-    Interactive tool for finding optimal parameters for a specific leaf.
-    """
-
-    print(f"=== Interactive Parameter Tuning for {file_path.name} ===")
-    print("Commands:")
-    print("  process <depth> <density_pct> <dist_mult> - Process with custom params")
-    print("  show - Show current result")
-    print("  save - Save current result")
-    print("  quit - Exit")
-
-    current_mesh = None
-    current_params = None
-
-    while True:
-        cmd = input("\n> ").strip().split()
-
-        if not cmd:
-            continue
-
-        if cmd[0] == "quit":
-            break
-
-        elif cmd[0] == "process" and len(cmd) == 4:
-            try:
-                depth = int(cmd[1])
-                density_pct = float(cmd[2])
-                dist_mult = float(cmd[3])
-
-                current_mesh, area = reprocess_with_custom_params(
-                    file_path, depth, density_pct, dist_mult, save_result=False
-                )
-                current_params = (depth, density_pct, dist_mult)
-                print(
-                    f"Parameters: depth={depth}, density_pct={density_pct}, dist_mult={dist_mult}"
-                )
-
-            except (ValueError, IndexError):
-                print("Usage: process <depth> <density_pct> <dist_mult>")
-
-        elif cmd[0] == "show":
-            if current_mesh is not None:
-                pcd = load_leaf_point_cloud(file_path)
-                pcd.paint_uniform_color([0.7, 0.7, 0.7])
-                current_mesh.paint_uniform_color([0.0, 0.7, 0.0])
-                o3d.visualization.draw_geometries([pcd, current_mesh])
-            else:
-                print("No mesh processed yet. Use 'process' command first.")
-
-        elif cmd[0] == "save":
-            if current_mesh is not None and current_params is not None:
-                depth, density_pct, dist_mult = current_params
-                reprocess_with_custom_params(
-                    file_path, depth, density_pct, dist_mult, save_result=True
-                )
-            else:
-                print("No mesh to save. Use 'process' command first.")
-
-        else:
-            print("Unknown command. Available: process, show, save, quit")
-
-
 def main():
     parser = argparse.ArgumentParser(
         description="Process TrackPlant3D dense leaves with trimmed Poisson reconstruction"
@@ -384,41 +209,18 @@ def main():
         default=10.0,
         help="Distance multiplier (default: 10.0)",
     )
-
-    # Subcommands
-    subparsers = parser.add_subparsers(dest="command", help="Available commands")
-
-    # Quality inspection
-    inspect_parser = subparsers.add_parser("inspect", help="Quality inspection tool")
-    inspect_parser.add_argument(
-        "--crop", default="maize", help="Crop name (default: maize)"
+    parser.add_argument(
+        "--version",
+        type=str,
+        default="v1",
+        help="Version name for the output directory (default: v1)",
     )
-    inspect_parser.add_argument(
-        "--samples", type=int, default=-1, help="Max samples to inspect (default: -1)"
-    )
-
-    # Interactive tuning
-    tune_parser = subparsers.add_parser("tune", help="Interactive parameter tuning")
-    tune_parser.add_argument("leaf_file", help="Path to leaf PLY file")
-
-    # Single reprocessing
-    reprocess_parser = subparsers.add_parser("reprocess", help="Reprocess single leaf")
-    reprocess_parser.add_argument("leaf_file", help="Path to leaf PLY file")
 
     args = parser.parse_args()
 
     base_path = Path("data/TrackPlant3D")
 
-    if args.command == "inspect":
-        inspect_leaf_quality(base_path, args.crop, args.samples)
-    elif args.command == "tune":
-        interactive_parameter_tuning(Path(args.leaf_file))
-    elif args.command == "reprocess":
-        reprocess_with_custom_params(
-            Path(args.leaf_file), args.depth, args.density, args.distance
-        )
-    else:  # Default to batch processing
-        process_all_dense_leaves(base_path, args.depth, args.density, args.distance)
+    process_all_dense_leaves(base_path, args.depth, args.density, args.distance, args.version)
 
 
 if __name__ == "__main__":
