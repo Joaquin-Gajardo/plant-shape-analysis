@@ -14,7 +14,7 @@ def extract_dense_leaves(base_path: Path = Path("data/TrackPlant3D")):
 
     dataset_path = base_path
     leaf_dataset = LeafSequencesDataset(
-        dataset_path, min_timepoints=1, apply_pca_alignment=True  # we get all leaves
+        dataset_path, min_timepoints=1, apply_pca_alignment=False  # we get all leaves
     )
     for seq in leaf_dataset:
         for scan in seq["timepoints"]:
@@ -220,7 +220,9 @@ def main():
 
     base_path = Path("data/TrackPlant3D")
 
-    process_all_dense_leaves(base_path, args.depth, args.density, args.distance, args.version)
+    process_all_dense_leaves(
+        base_path, args.depth, args.density, args.distance, args.version
+    )
 
 
 if __name__ == "__main__":
