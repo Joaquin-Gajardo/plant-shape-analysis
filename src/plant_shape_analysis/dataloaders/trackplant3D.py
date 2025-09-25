@@ -556,6 +556,8 @@ class LeafSequencesDataset(Dataset):
             json_trans = trans.copy()
             if isinstance(json_trans.get("rotation_matrix"), np.ndarray):
                 json_trans["rotation_matrix"] = json_trans["rotation_matrix"].tolist()
+            if isinstance(json_trans.get("basis"), np.ndarray):
+                json_trans["basis"] = json_trans["basis"].tolist()
             if isinstance(json_trans.get("original_center"), np.ndarray):
                 json_trans["original_center"] = json_trans["original_center"].tolist()
             if isinstance(json_trans.get("reference_center"), np.ndarray):
