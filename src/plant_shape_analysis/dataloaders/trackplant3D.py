@@ -488,11 +488,11 @@ class LeafSequencesDataset(Dataset):
                 aligned_points = centered @ rotation_matrix.T + ref_center
 
             # Transform dense points if they exist
+            # Use same center as sparse points for perfect alignment
             aligned_dense_points = None
             if tp.get("dense_points") is not None:
                 dense_points = tp["dense_points"]
-                dense_center = np.mean(dense_points, axis=0)
-                dense_centered = dense_points - dense_center
+                dense_centered = dense_points - center  # Use sparse points center!
                 if i == reference_idx:
                     aligned_dense_points = dense_centered + ref_center
                 else:
