@@ -166,6 +166,7 @@ def visualize_leaf_sequence(
     spacing: float = 30.0,
     show_leaf_tips: bool = True,
     show_connections: bool = True,
+    dense_points: bool = False,
     window_name: str = "Leaf Growth Sequence",
 ):
     """
@@ -196,10 +197,16 @@ def visualize_leaf_sequence(
     leaf_tip_positions = []
 
     # Process each timepoint
+    points_key = "dense_points" if dense_points else "points"
     for i, timepoint in enumerate(timepoints):
-        points = timepoint["points"]
+        points = timepoint[points_key]
         day = timepoint["day"]
         leaf_tip = timepoint["leaf_tip"]
+
+        if points is None:
+            raise ValueError(
+                f"Leaf sequence {leaf_timeseries['sequence_name']}, timepoint {day} does not have '{points_key}' data."
+            )
 
         # Create point cloud for this timepoint
         pcd = o3d.geometry.PointCloud()

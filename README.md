@@ -57,19 +57,38 @@ We provide a dataloader for the TrackPlant3D dataset in [src/plant_shape_analysi
 - `PlantSequencesDataset`: A PyTorch Dataset class for loading the TrackPlant3D dataset plants as temporal sequence.
 - `LeafSequencesDataset`: A PyTorch Dataset class for loading the TrackPlant3D dataset as organ temporal sequences, using the organ segmentation label on each plant. One can estimate normals and align the leaves using PCA.
 
+Example usage of the `LeafSequencesDataset`:
+```python
+from src.plant_shape_analysis.dataloaders.trackplant3D import LeafSequencesDataset
+
+dataset_path = Path("data/TrackPlant3D/versions/v1")
+leaf_dataset = LeafSequencesDataset(dataset_path, min_timepoints=2, align_pca=True, estimate_normals=True)
+
+# List all sequence names
+print(leaf_dataset.get_sequence_names())
+
+# Get a specific leaf timeseries by its unique sequence name
+maize_leaf1 = leaf_dataset.get_timeseries_by_sequence_name('maize_control_plant1_leaf1')
+print(maize_leaf1)
+
+# Get all leaves from a specific plant sequence
+maize_leaves = leaf_dataset.get_timeseries_by_plant_sequence('maize_control_plant1')
+print(len(maize_leaves))  # number of leaves in that plant
+```
+
+
 #### Visualization
 
-Directly run to visualize two example leaf sequences:
+Run dataloader as main to visualize three best examples of dense leaf sequences:
 ```bash
 python src/plant_shape_analysis/dataloaders/trackplant3D.py
 ```
 
 ## Training
-### Fit single leaf surface
+### Fit static leaf surface
 
 #### SIREN
-
-Using Siren (Sitzmann et al., 2020):
+The following is an example of fitting a single leaf surface from a point cloud using Siren (Sitzmann et al., 2020). This can be used as a starting point for implementing other implicit neural representations to plant point clouds, and as a baseline for static leaf surface fitting or to expand to dynamic surface fitting.
 ```bash
-python fit_leaf_surface.py # By defaults uses first leaf, run with --help to see CL options
+python fit_leaf_surface.py -s tomato2_control_plant2_leaf1 -t 0  # run with --help to see other CL options
 ```

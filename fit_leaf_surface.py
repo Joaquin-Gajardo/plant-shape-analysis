@@ -22,7 +22,7 @@ from plant_shape_analysis.vis.plot_functions import (
 
 
 def get_leaf(
-    seq_idx: int = None,
+    sequence_name: str = None,
     timepoint: int = None,
     with_normals: bool = True,
     visualize: bool = True,
@@ -36,22 +36,30 @@ def get_leaf(
         "data/TrackPlant3D", estimate_normals=False, apply_pca_alignment=False
     )
 
-    if seq_idx is None:
-        seq_idx = random.randint(0, len(leaf_sequences) - 1)
+    # Get leaf timeseries by sequence name
+    if sequence_name is None:
+        # If no sequence name provided, pick the first one
+        leaf_timeseries = leaf_sequences[0]
+    else:
+        # Look up by sequence name
+        leaf_timeseries = leaf_sequences.get_timeseries_by_sequence_name(sequence_name)
+        if leaf_timeseries is None:
+            raise ValueError(f"Sequence name '{sequence_name}' not found in dataset")
+
     if timepoint is None:
-        timepoint = random.randint(0, len(leaf_sequences[seq_idx]["timepoints"]) - 1)
+        timepoint = 0  # Use first timepoint if not specified
 
     points_key = "dense_points" if dense_points else "points"
-    point_cloud = leaf_sequences[seq_idx]["timepoints"][timepoint][points_key]
+    point_cloud = leaf_timeseries["timepoints"][timepoint][points_key]
 
     if point_cloud is None:
         raise ValueError(
-            f"Leaf sequence {seq_idx}, timepoint {timepoint} does not have '{points_key}' points."
+            f"Leaf sequence {leaf_timeseries['sequence_name']}, timepoint {timepoint} does not have '{points_key}' points."
         )
     print(
-        f"Loaded point cloud of leaf sequence {seq_idx}, timepoint {timepoint} with shape: {point_cloud.shape}"
+        f"Loaded point cloud of sequence {leaf_timeseries['sequence_name']}, timepoint {timepoint} with shape: {point_cloud.shape}"
     )
-    leaf_name = f"{leaf_sequences[seq_idx]['sequence_name']}_day{timepoint}_leaf{int(leaf_sequences[seq_idx]['leaf_id'])}"
+    leaf_name = f"{leaf_timeseries['sequence_name']}_day{timepoint}"
     if dense_points:
         leaf_name += "-dense"
 
@@ -112,7 +120,7 @@ def extract_mesh(
 
 def main(
     results_folder="results/static_leaves/siren/dry_runs",
-    leaf_sequence=0,
+    sequence_name=None,
     timepoint=0,
     hidden_neurons=128,
     hidden_layers=3,
@@ -132,7 +140,7 @@ def main(
 
     # Get leaf point cloud to fit
     sample, leaf_name = get_leaf(
-        seq_idx=leaf_sequence,
+        sequence_name=sequence_name,
         timepoint=timepoint,
         with_normals=True,
         visualize=False,
@@ -310,9 +318,9 @@ if __name__ == "__main__":
         "--results_folder", type=str, default="results/static_leaves/siren/dry_runs"
     )
     parser.add_argument(
-        "--leaf_sequence", type=int, default=0, help="Leaf sequence index"
+        "-s", "--sequence_name", type=str, default=None, help="Leaf sequence name (e.g., 'tomato2_control_plant2_leaf1')"
     )
-    parser.add_argument("--timepoint", type=int, default=0, help="Timepoint index")
+    parser.add_argument("-t", "--timepoint", type=int, default=0, help="Timepoint index")
     parser.add_argument(
         "--epochs", type=int, default=100_000, help="Number of training epochs"
     )
@@ -355,7 +363,7 @@ if __name__ == "__main__":
 
     main(
         results_folder=args.results_folder,
-        leaf_sequence=args.leaf_sequence,
+        sequence_name=args.sequence_name,
         timepoint=args.timepoint,
         hidden_neurons=args.hidden_neurons,
         hidden_layers=args.hidden_layers,

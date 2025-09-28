@@ -236,9 +236,12 @@ class LeafSequencesDataset(Dataset):
                         self.max_timepoints is None
                         or len(timepoints) <= self.max_timepoints
                     ):
+                        # Create unique sequence name with leaf ID
+                        unique_sequence_name = f"{sequence_name}_leaf{leaf_id}"
                         leaf_timeseries.append(
                             {
-                                "sequence_name": sequence_name,
+                                "sequence_name": unique_sequence_name,
+                                "plant_sequence_name": sequence_name,
                                 "leaf_id": int(leaf_id),
                                 "timepoints": timepoints,
                             }
@@ -385,6 +388,21 @@ class LeafSequencesDataset(Dataset):
     def get_timeseries_by_treatment(self, treatment):
         """Get leaf timeseries filtered by treatment"""
         return [ts for ts in self.leaf_timeseries if treatment in ts["sequence_name"]]
+
+    def get_timeseries_by_sequence_name(self, sequence_name):
+        """Get leaf timeseries by unique sequence name (e.g., 'tomato2_control_plant2_leaf1')"""
+        for ts in self.leaf_timeseries:
+            if ts["sequence_name"] == sequence_name:
+                return ts
+        return None
+
+    def get_timeseries_by_plant_sequence(self, plant_sequence_name):
+        """Get all leaf timeseries for a plant sequence (e.g., 'tomato2_control_plant2')"""
+        return [
+            ts
+            for ts in self.leaf_timeseries
+            if ts["plant_sequence_name"] == plant_sequence_name
+        ]
 
     def _pca_align(self, pc1, pc2):
         """
@@ -601,12 +619,20 @@ if __name__ == "__main__":
     # print("Dataset info:", info)
     # print("\n")
 
-    # Visualize one sequence
+    # sample = leaf_dataset[0]
+
+    # Visualize some leaf sequences
+    print("Visualizing some leaf sequences...")
+
     from plant_shape_analysis.vis.plot_functions import visualize_leaf_sequence
 
-    for i, sample in enumerate(leaf_dataset):
-        if i <= 2:
-            print(f"Visualizing leaf sequence {i}")
-            visualize_leaf_sequence(sample)
+    sequences = [
+        "maize_control_plant2_leaf2",
+        "tomato2_control_plant2_leaf1",
+        "tomato2_control_plant3_leaf2",
+    ]
 
-    sample = leaf_dataset[0]
+    for i, seq in enumerate(sequences):
+        sample = leaf_dataset.get_timeseries_by_sequence_name(seq)
+        print(f"Visualizing leaf sequence {seq} ({i+1}/{len(sequences)})...")
+        visualize_leaf_sequence(sample, dense_points=True)
