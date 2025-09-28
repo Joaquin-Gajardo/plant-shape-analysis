@@ -31,8 +31,10 @@ def get_leaf(
 ):
     """Get a leaf dataset with the fixed PointCloudSiren class"""
 
-    # We just want a single leaf so we don't estimate normals for all to save time
-    leaf_sequences = LeafSequencesDataset("data/TrackPlant3D", estimate_normals=False)
+    # We just want a single leaf so to save time we don't estimate normals of all leaves or align thems
+    leaf_sequences = LeafSequencesDataset(
+        "data/TrackPlant3D", estimate_normals=False, apply_pca_alignment=False
+    )
 
     if seq_idx is None:
         seq_idx = random.randint(0, len(leaf_sequences) - 1)
@@ -268,7 +270,7 @@ def main(
                         format="obj",
                     )
 
-                    if temp_mesh_path.exists():
+                    if temp_mesh_path.exists() and logger == "wandb":
                         log_data[f"mesh"] = wandb.Object3D(
                             str(temp_mesh_path), caption=f"Mesh at epoch {epoch}"
                         )
@@ -277,7 +279,8 @@ def main(
                     temp_checkpoint.unlink(missing_ok=True)
                     model.train()
 
-                wandb.log(log_data)
+                if logger == "wandb":
+                    wandb.log(log_data)
 
     torch.save(model.state_dict(), checkpoint_path)
     print(f"Training complete. Model saved to {checkpoint_path}")
