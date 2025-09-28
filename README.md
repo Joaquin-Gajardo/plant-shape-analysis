@@ -1,4 +1,5 @@
 # plant-shape-analysis
+A repository for reconstructing and analyzing plant shape evolution using implicit neural representations, with a focus on leaf surface fitting and trait extraction from 3D point clouds.
 
 
 ## Setup
@@ -6,7 +7,7 @@ Create a python environment with pymeshlab, plyfile, open3D, pytorch, e.g. using
 ```bash
 conda create -n plant-shape-analysis python==3.12
 conda activate plant-shape-analysis
-conda install -c conda-forge gcc gxx  # For X forwarding open3d window with PuTTy and XLaunch (optional)
+# conda install -c conda-forge gcc gxx  # Optional: for X forwarding open3d window with PuTTy and XLaunch
 conda install ipykernel # for Jupyter notebooks in VSCode
 pip install -e . # install package
 ```
@@ -36,9 +37,39 @@ Usage:
 
 </details>
 
+## Data
+### TrackPlant3D
+The TrackPlant3D dataset (Li et al., COMPAG 2024) dataset contains 3D point clouds of plants at different growth stages with organ instance segmentation, which were sourced from different datasets, annotated and downsampled to 10'000 points per plant. The original dataset can be accessed [here](https://github.com/entarot/TrackPlant3D-3D-organ-growth-tracking-framework-for-organ-level-dynamic-phenotyping).
+
+#### Download dataset
+We provide a processed version, with leaf keypoint annotations, cleaned segmentations and matched dense point clouds, available in the following [link](https://polybox.ethz.ch/index.php/apps/files/files/4247413277?dir=/Share/datasets/TrackPlant3D). Please cite the original datasets if you use this dataset (see README within the dataset).
+
+```bash
+# Download v1 of the dataset (751 MB): minimal cleaning of segmentations, keypoint annotations for leaves, and matched dense point clouds
+wget -O v1.zip https://polybox.ethz.ch/index.php/s/mMYwj9gjHTyNpqD
+unzip v1.zip -d data/TrackPlant3D/versions
+rm v1.zip
+```
+
+#### Dataloader
+We provide a dataloader for the TrackPlant3D dataset in [src/plant_shape_analysis/dataloaders/trackplant3D.py](src/plant_shape_analysis/dataloaders/trackplant3D.py). It contains the following classes:
+
+- `PlantSequencesDataset`: A PyTorch Dataset class for loading the TrackPlant3D dataset plants as temporal sequence.
+- `LeafSequencesDataset`: A PyTorch Dataset class for loading the TrackPlant3D dataset as organ temporal sequences, using the organ segmentation label on each plant. One can estimate normals and align the leaves using PCA.
+
+#### Visualization
+
+Directly run to visualize two example leaf sequences:
+```bash
+python src/plant_shape_analysis/dataloaders/trackplant3D.py
+```
+
 ## Training
 ### Fit single leaf surface
 
+#### SIREN
+
 Using Siren (Sitzmann et al., 2020):
 ```bash
-python fit_leaf_surface.py # By defaults using first leaf, run with --help to see CL options
+python fit_leaf_surface.py # By defaults uses first leaf, run with --help to see CL options
+```

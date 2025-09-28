@@ -601,12 +601,12 @@ if __name__ == "__main__":
     # print("Dataset info:", info)
     # print("\n")
 
-    # # Visualize one sequence
-    # from plant_shape_analysis.vis.plot_functions import visualize_leaf_sequence
+    # Visualize one sequence
+    from plant_shape_analysis.vis.plot_functions import visualize_leaf_sequence
 
-    # for i, sample in enumerate(leaf_dataset):
-    #     if i <= 2:
-    #         print(f"Visualizing leaf sequence {i}")
-    #         visualize_leaf_sequence(sample)
+    for i, sample in enumerate(leaf_dataset):
+        if i <= 2:
+            print(f"Visualizing leaf sequence {i}")
+            visualize_leaf_sequence(sample)
 
     sample = leaf_dataset[0]
