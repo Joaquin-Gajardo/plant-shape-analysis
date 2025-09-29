@@ -46,7 +46,7 @@ We provide a processed version, with leaf keypoint annotations, cleaned segmenta
 
 ```bash
 # Download v1 of the dataset (751 MB): minimal cleaning of segmentations, keypoint annotations for leaves, and matched dense point clouds
-wget -O v1.zip https://polybox.ethz.ch/index.php/s/mMYwj9gjHTyNpqD
+wget -O v1.zip https://polybox.ethz.ch/index.php/s/mxiZwKfCfd39Rxx/download
 unzip v1.zip -d data/TrackPlant3D/versions
 rm v1.zip
 ```
