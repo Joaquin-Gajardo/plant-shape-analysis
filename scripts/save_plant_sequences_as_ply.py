@@ -8,10 +8,10 @@ import numpy as np
 import open3d as o3d
 from tqdm import tqdm
 
-from src.plant_shape_analysis.dataloaders.trackplant3D import PlantSequencesDataset
+from plant_shape_analysis.dataloaders.trackplant3D import PlantSequencesDataset
 
 
-def save_as_ply(points, labels, leaf_tip_idxs, output_path):
+def save_as_ply(points, labels, leaf_tip_idxs, output_path, include_leaf_tips=True):
     """
     Save point cloud with labels and leaf tips as PLY file with scalar fields.
 
@@ -20,6 +20,7 @@ def save_as_ply(points, labels, leaf_tip_idxs, output_path):
         labels: (N,) array of organ instance labels
         leaf_tip_idxs: array of indices marking leaf tips
         output_path: Path to save PLY file
+        include_leaf_tips: Whether to include is_leaf_tip scalar field (only for sparse GT)
     """
     # Create a tensor-based point cloud
     pcd = o3d.t.geometry.PointCloud(points)
@@ -29,13 +30,14 @@ def save_as_ply(points, labels, leaf_tip_idxs, output_path):
         labels.reshape(-1, 1), dtype=o3d.core.Dtype.Int32
     )
 
-    # Create leaf tip mask and attach as property
-    leaf_tip_mask = np.zeros(len(points), dtype=np.uint8)
-    if len(leaf_tip_idxs) > 0:
-        leaf_tip_mask[leaf_tip_idxs] = 1
-    pcd.point["is_leaf_tip"] = o3d.core.Tensor(
-        leaf_tip_mask.reshape(-1, 1), dtype=o3d.core.Dtype.UInt8
-    )
+    # Create leaf tip mask and attach as property (only for sparse GT files)
+    if include_leaf_tips:
+        leaf_tip_mask = np.zeros(len(points), dtype=np.uint8)
+        if len(leaf_tip_idxs) > 0:
+            leaf_tip_mask[leaf_tip_idxs] = 1
+        pcd.point["is_leaf_tip"] = o3d.core.Tensor(
+            leaf_tip_mask.reshape(-1, 1), dtype=o3d.core.Dtype.UInt8
+        )
 
     # Save as PLY
     o3d.t.io.write_point_cloud(str(output_path), pcd)
@@ -48,11 +50,9 @@ def main():
     # Create output directories
     gt_corrected_dir = output_base_dir / "gt_corrected_v1"
     dense_dir = output_base_dir / "dense"
-    leaf_tips_dir = output_base_dir / "keypoints" / "leaf_tips"
 
     gt_corrected_dir.mkdir(parents=True, exist_ok=True)
     dense_dir.mkdir(parents=True, exist_ok=True)
-    leaf_tips_dir.mkdir(parents=True, exist_ok=True)
 
     # Load dataset
     print("Loading plant sequences dataset...")
@@ -78,14 +78,19 @@ def main():
                 crop_name = file_path.parent.name
                 original_filename = file_path.stem + ".ply"
 
-                # 1. Save gt_corrected_v1
+                # 1. Save gt_corrected_v1 (sparse, with leaf tips)
                 gt_crop_dir = gt_corrected_dir / crop_name
                 gt_crop_dir.mkdir(exist_ok=True)
                 save_as_ply(
-                    points, labels, leaf_tip_idxs, gt_crop_dir / original_filename
+                    points,
+                    labels,
+                    leaf_tip_idxs,
+                    gt_crop_dir / original_filename,
+                    include_leaf_tips=True,
                 )
 
-                # 2. Save dense point clouds if available
+                # 2. Save dense point clouds if available (without leaf tips)
+                # Dense clouds are ICP-aligned but not perfectly, so leaf tips would be misaligned
                 if dense_points is not None and dense_labels is not None:
                     dense_crop_dir = dense_dir / crop_name
                     dense_crop_dir.mkdir(exist_ok=True)
@@ -94,23 +99,7 @@ def main():
                         dense_labels,
                         leaf_tip_idxs,
                         dense_crop_dir / original_filename,
-                    )
-
-                # 3. Save leaf tips as separate PLY files
-                if len(leaf_tip_idxs) > 0:
-                    leaf_tips_crop_dir = leaf_tips_dir / crop_name
-                    leaf_tips_crop_dir.mkdir(exist_ok=True)
-
-                    tip_coords = points[leaf_tip_idxs]
-                    tip_labels = labels[leaf_tip_idxs]
-
-                    # Create point cloud with just leaf tips
-                    pcd = o3d.t.geometry.PointCloud(tip_coords)
-                    pcd.point["organ_label"] = o3d.core.Tensor(
-                        tip_labels.reshape(-1, 1), dtype=o3d.core.Dtype.Int32
-                    )
-                    o3d.t.io.write_point_cloud(
-                        str(leaf_tips_crop_dir / original_filename), pcd
+                        include_leaf_tips=False,
                     )
 
                 pbar.update(1)

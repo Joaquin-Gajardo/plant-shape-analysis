@@ -26,8 +26,10 @@ class PlantSequencesDataset(Dataset):
         self.file_extension = "*.ply" if use_ply else "*.txt"
 
         self.point_clouds_path = self.dataset_path / "gt_corrected_v1"
-        self.leaf_tips_path = self.dataset_path / "keypoints" / "leaf_tips"
         self.dense_path = self.dataset_path / "dense"
+
+        # This is only used when using txt files, as PLY files have leaf tips as a scalar field (sparse ones)
+        self.leaf_tips_path = self.dataset_path / "keypoints" / "leaf_tips"
 
         # Organize files into sequences
         self.sequences = self._organize_sequences()
