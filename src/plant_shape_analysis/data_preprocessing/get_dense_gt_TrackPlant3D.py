@@ -164,7 +164,7 @@ def get_trackplant3D_scans_paths(dataset_path: Path, crop: str) -> list[Path]:
     Returns:
         List of paths to scan files
     """
-    plant_dataset = PlantSequencesDataset(dataset_path)
+    plant_dataset = PlantSequencesDataset(dataset_path, use_ply=False)
     trackplant3D = []
     for _, path in sorted(
         plant_dataset.get_sequences_by_crop(crop).items(), key=lambda x: x[0]

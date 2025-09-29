@@ -13,10 +13,21 @@ from plant_shape_analysis.vis.plot_functions import plot_pairwise_alignment_with
 
 
 class PlantSequencesDataset(Dataset):
-    def __init__(self, dataset_path):
-        self.point_clouds_path = Path(dataset_path) / "gt_corrected_v1"
-        self.leaf_tips_path = Path(dataset_path) / "keypoints" / "leaf_tips"
-        self.dense_path = Path(dataset_path) / "dense"
+    def __init__(self, dataset_path, use_ply=True):
+        """
+        Initialize PlantSequencesDataset.
+
+        Args:
+            dataset_path: Path to TrackPlant3D dataset
+            use_ply: If True, load from PLY files instead of TXT files. Keeping both options for compatibility to original dataset format.
+        """
+        self.dataset_path = Path(dataset_path)
+        self.use_ply = use_ply
+        self.file_extension = "*.ply" if use_ply else "*.txt"
+
+        self.point_clouds_path = self.dataset_path / "gt_corrected_v1"
+        self.leaf_tips_path = self.dataset_path / "keypoints" / "leaf_tips"
+        self.dense_path = self.dataset_path / "dense"
 
         # Organize files into sequences
         self.sequences = self._organize_sequences()
@@ -31,30 +42,31 @@ class PlantSequencesDataset(Dataset):
         for crop_folder in crop_folders:
             crop_name = crop_folder.name
 
-            # Get all txt files in the crop folder
-            txt_files = list(crop_folder.glob("*.txt"))
+            # Get all files with the appropriate extension
+            files = list(crop_folder.glob(self.file_extension))
 
             # Group files by full sequence identifier (crop_treatment_plant)
             sequence_groups = defaultdict(list)
 
-            for txt_file in txt_files:
+            for file in files:
                 # Extract sequence identifier from filename
                 # Example: "1_maize_control_plant1_D00.txt" -> "maize_control_plant1"
-                # Pattern: number_crop_treatment_plantX_DXX.txt
-                match = re.search(r"\d+_(.+)_D\d+\.txt$", txt_file.name)
+                # Pattern: number_crop_treatment_plantX_DXX.(txt|ply)
+                pattern = r"\d+_(.+)_D\d+\.(?:txt|ply)$"
+                match = re.search(pattern, file.name)
                 if match:
                     # Extract everything between the initial number and the day
                     sequence_part = match.group(1)  # e.g., "maize_control_plant1"
-                    sequence_groups[sequence_part].append(txt_file)
+                    sequence_groups[sequence_part].append(file)
                 else:
                     # Fallback: try to extract manually
                     # Remove the leading number and trailing day part
-                    name_parts = txt_file.stem.split("_")
+                    name_parts = file.stem.split("_")
                     if len(name_parts) >= 4:  # At least: number, crop, treatment, plant
                         sequence_part = "_".join(
                             name_parts[1:-1]
                         )  # Skip first number and last day
-                        sequence_groups[sequence_part].append(txt_file)
+                        sequence_groups[sequence_part].append(file)
 
             # Sort files within each sequence group by day
             for sequence_id, files in sequence_groups.items():
@@ -81,12 +93,20 @@ class PlantSequencesDataset(Dataset):
         return self.sequences.get(sequence_name, [])
 
     def load_point_cloud(self, file_path):
-        """Load point cloud from txt file"""
-        # File format: x, y, z, organ_instance_label
-        data = np.loadtxt(file_path)
-        points = data[:, :3]  # x, y, z coordinates
-        labels = data[:, 3].astype(int)  # labels
-        return points, labels
+        """Load point cloud from txt or ply file"""
+        if self.use_ply:
+            # Load from PLY file
+            pcd = o3d.t.io.read_point_cloud(str(file_path))
+            points = pcd.point.positions.numpy()
+            labels = pcd.point.organ_label.numpy().flatten().astype(int)
+            return points, labels
+        else:
+            # Load from TXT file
+            # File format: x, y, z, organ_instance_label
+            data = np.loadtxt(file_path)
+            points = data[:, :3]  # x, y, z coordinates
+            labels = data[:, 3].astype(int)  # labels
+            return points, labels
 
     def load_dense_point_cloud(self, file_path):
         """Load dense point cloud for a specific sequence and day if available"""
@@ -99,22 +119,36 @@ class PlantSequencesDataset(Dataset):
     def load_leaf_tips(self, point_cloud_path):
         """Load leaf tips for a specific sequence and day"""
         crop_name = point_cloud_path.parent.name
-        file_path = self.leaf_tips_path / crop_name / point_cloud_path.name
 
-        # Load with comma delimiter - format: global_index, x, y, z
-        global_indices = np.array([])
-        coordinates = np.array([])
-        if file_path.exists():
-            data = np.loadtxt(file_path, delimiter=",")
-            if data.ndim == 1:  # Single row
-                data = data.reshape(1, -1)
+        if self.use_ply:
+            # For PLY: read is_leaf_tip scalar field from main point cloud
+            pcd = o3d.t.io.read_point_cloud(str(point_cloud_path))
+            points = pcd.point.positions.numpy()
+            is_leaf_tip = pcd.point.is_leaf_tip.numpy().flatten().astype(bool)
 
-            # Extract global indices and coordinates
-            global_indices = data[:, 0].astype(int)
-            coordinates = data[:, 1:4]
-        # Note: Leaf tips may not exist for all files, which is expected
+            # Get indices where is_leaf_tip is True
+            global_indices = np.where(is_leaf_tip)[0]
+            coordinates = points[global_indices]
 
-        return global_indices, coordinates
+            return global_indices, coordinates
+        else:
+            # For TXT: load from comma-delimited txt file
+            file_path = self.leaf_tips_path / crop_name / point_cloud_path.name
+
+            # Load with comma delimiter - format: global_index, x, y, z
+            global_indices = np.array([])
+            coordinates = np.array([])
+            if file_path.exists():
+                data = np.loadtxt(file_path, delimiter=",")
+                if data.ndim == 1:  # Single row
+                    data = data.reshape(1, -1)
+
+                # Extract global indices and coordinates
+                global_indices = data[:, 0].astype(int)
+                coordinates = data[:, 1:4]
+            # Note: Leaf tips may not exist for all files, which is expected
+
+            return global_indices, coordinates
 
     def get_sequence_data(self, sequence_name):
         """Get all point clouds and leaf tips for a sequence"""
@@ -182,8 +216,9 @@ class LeafSequencesDataset(Dataset):
         apply_pca_alignment: bool = False,
         save_transformations: bool = False,
         estimate_normals: bool = False,
+        use_ply: bool = False,
     ):
-        self.plant_dataset = PlantSequencesDataset(dataset_path)
+        self.plant_dataset = PlantSequencesDataset(dataset_path, use_ply=use_ply)
         self.dataset_path = Path(dataset_path)
         self.min_timepoints = min_timepoints
         self.max_timepoints = max_timepoints
