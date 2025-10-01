@@ -22,6 +22,7 @@ from plant_shape_analysis.vis.plot_functions import (
 
 
 def get_leaf(
+    data_path: str = "data/TrackPlant3D",
     sequence_name: str = None,
     timepoint: int = None,
     with_normals: bool = True,
@@ -33,7 +34,7 @@ def get_leaf(
 
     # We just want a single leaf so to save time we don't estimate normals of all leaves or align thems
     leaf_sequences = LeafSequencesDataset(
-        "data/TrackPlant3D", estimate_normals=False, apply_pca_alignment=False
+        data_path, estimate_normals=False, apply_pca_alignment=False
     )
 
     # Get leaf timeseries by sequence name
@@ -119,6 +120,7 @@ def extract_mesh(
 
 
 def main(
+    data_path: str = "data/TrackPlant3D",
     results_folder="results/static_leaves/siren/dry_runs",
     sequence_name=None,
     timepoint=0,
@@ -140,6 +142,7 @@ def main(
 
     # Get leaf point cloud to fit
     sample, leaf_name = get_leaf(
+        data_path=data_path,
         sequence_name=sequence_name,
         timepoint=timepoint,
         with_normals=True,
@@ -314,13 +317,20 @@ def main(
 if __name__ == "__main__":
 
     parser = ArgumentParser()
+    parser.add_argument("-p", "--dataset_path", type=str, default="data/TrackPlant3D")
     parser.add_argument(
         "--results_folder", type=str, default="results/static_leaves/siren/dry_runs"
     )
     parser.add_argument(
-        "-s", "--sequence_name", type=str, default=None, help="Leaf sequence name (e.g., 'tomato2_control_plant2_leaf1')"
+        "-s",
+        "--sequence_name",
+        type=str,
+        default=None,
+        help="Leaf sequence name (e.g., 'tomato2_control_plant2_leaf1')",
     )
-    parser.add_argument("-t", "--timepoint", type=int, default=0, help="Timepoint index")
+    parser.add_argument(
+        "-t", "--timepoint", type=int, default=0, help="Timepoint index"
+    )
     parser.add_argument(
         "--epochs", type=int, default=100_000, help="Number of training epochs"
     )
@@ -362,6 +372,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     main(
+        data_path=args.dataset_path,
         results_folder=args.results_folder,
         sequence_name=args.sequence_name,
         timepoint=args.timepoint,
