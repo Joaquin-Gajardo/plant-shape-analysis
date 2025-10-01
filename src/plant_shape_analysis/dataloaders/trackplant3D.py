@@ -638,7 +638,7 @@ class LeafSequencesDataset(Dataset):
 
 if __name__ == "__main__":
 
-    dataset_path = Path("data/TrackPlant3D")
+    dataset_path = Path("data/TrackPlant3D/versions/v1")
 
     # # Example usage for PlantSequencesDataset
     # plant_dataset = PlantSequencesDataset(dataset_path)
@@ -652,7 +652,7 @@ if __name__ == "__main__":
     # Example usage for LeafSequencesDataset
     print("Creating regular leaf dataset...")
     leaf_dataset = LeafSequencesDataset(
-        dataset_path, min_timepoints=3, apply_pca_alignment=True
+        dataset_path, min_timepoints=3, apply_pca_alignment=True, use_ply=True
     )
     # print("Leaf timeseries dataset:")
     # print(f"Number of leaf timeseries: {len(leaf_dataset)}")
