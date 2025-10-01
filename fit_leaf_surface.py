@@ -23,6 +23,7 @@ from plant_shape_analysis.vis.plot_functions import (
 
 def get_leaf(
     data_path: str = "data/TrackPlant3D",
+    use_ply: bool = False,
     sequence_name: str = None,
     timepoint: int = None,
     with_normals: bool = True,
@@ -34,7 +35,7 @@ def get_leaf(
 
     # We just want a single leaf so to save time we don't estimate normals of all leaves or align thems
     leaf_sequences = LeafSequencesDataset(
-        data_path, estimate_normals=False, apply_pca_alignment=False
+        data_path, estimate_normals=False, apply_pca_alignment=False, use_ply=use_ply
     )
 
     # Get leaf timeseries by sequence name
@@ -46,7 +47,6 @@ def get_leaf(
         leaf_timeseries = leaf_sequences.get_timeseries_by_sequence_name(sequence_name)
         if leaf_timeseries is None:
             raise ValueError(f"Sequence name '{sequence_name}' not found in dataset")
-
     if timepoint is None:
         timepoint = 0  # Use first timepoint if not specified
 
@@ -121,6 +121,7 @@ def extract_mesh(
 
 def main(
     data_path: str = "data/TrackPlant3D",
+    use_ply: bool = False,
     results_folder="results/static_leaves/siren/dry_runs",
     sequence_name=None,
     timepoint=0,
@@ -143,6 +144,7 @@ def main(
     # Get leaf point cloud to fit
     sample, leaf_name = get_leaf(
         data_path=data_path,
+        use_ply=use_ply,
         sequence_name=sequence_name,
         timepoint=timepoint,
         with_normals=True,
@@ -319,6 +321,9 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("-p", "--dataset_path", type=str, default="data/TrackPlant3D")
     parser.add_argument(
+        "--use_ply", action="store_true", help="Use PLY files instead of txt files"
+    )
+    parser.add_argument(
         "--results_folder", type=str, default="results/static_leaves/siren/dry_runs"
     )
     parser.add_argument(
@@ -373,6 +378,7 @@ if __name__ == "__main__":
 
     main(
         data_path=args.dataset_path,
+        use_ply=args.use_ply,
         results_folder=args.results_folder,
         sequence_name=args.sequence_name,
         timepoint=args.timepoint,

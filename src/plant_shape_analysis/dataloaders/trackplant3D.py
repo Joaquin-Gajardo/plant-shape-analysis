@@ -231,6 +231,11 @@ class LeafSequencesDataset(Dataset):
         # Build leaf timeseries samples
         self.leaf_timeseries = self._build_leaf_timeseries()
 
+        if len(self.leaf_timeseries) == 0:
+            raise ValueError(
+                "No leaf timeseries found with the given parameters. "
+                "Verify dataset path and file extension (use `use_ply=True` if loading PLY files)."
+            )
         # Apply PCA alignment if requested
         if self.apply_pca_alignment:
             print(
