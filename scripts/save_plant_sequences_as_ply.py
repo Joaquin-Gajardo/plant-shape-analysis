@@ -83,9 +83,11 @@ def main():
         help="Output directory structure: 'crop' groups by crop type (default), 'sequence' creates per-plant directories with sparse/dense subdirectories",
     )
     parser.add_argument(
-        "--align-pca",
-        action="store_true",
-        help="Apply PCA alignment to all plant sequences (default: False)",
+        "--align-method",
+        type=str,
+        choices=["pca", "icp"],
+        default=None,
+        help="Alignment method to apply (default: None)",
     )
 
     args = parser.parse_args()
@@ -101,7 +103,9 @@ def main():
     print(f"  Output format: {args.output_format}")
 
     plant_dataset = PlantSequencesDataset(
-        dataset_path, use_ply=args.use_ply, apply_pca_alignment=args.align_pca
+        dataset_path,
+        use_ply=args.use_ply,
+        alignment_method=args.align_method,
     )
 
     # Determine which sequences to process

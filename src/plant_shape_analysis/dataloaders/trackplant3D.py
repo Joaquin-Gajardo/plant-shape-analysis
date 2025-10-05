@@ -9,21 +9,32 @@ import numpy as np
 import open3d as o3d
 from torch.utils.data import Dataset
 
+from plant_shape_analysis.alignment.icp_alignment import align_plant_pair_icp
 from plant_shape_analysis.vis.plot_functions import plot_pairwise_alignment_with_quivers
 
 
 class PlantSequencesDataset(Dataset):
-    def __init__(self, dataset_path, use_ply=True):
+    def __init__(
+        self,
+        dataset_path,
+        use_ply=False,
+        alignment_method=None,
+        save_transformations=False,
+    ):
         """
         Initialize PlantSequencesDataset.
 
         Args:
             dataset_path: Path to TrackPlant3D dataset
             use_ply: If True, load from PLY files instead of TXT files. Keeping both options for compatibility to original dataset format.
+            alignment_method: Alignment method - None (no alignment), 'pca' (fast, approximate), or 'icp' (slower, more accurate)
+            save_transformations: If True, save transformation matrices when applying alignment
         """
         self.dataset_path = Path(dataset_path)
         self.use_ply = use_ply
         self.file_extension = "*.ply" if use_ply else "*.txt"
+        self.alignment_method = alignment_method
+        self._save_transformations = save_transformations
 
         self.point_clouds_path = self.dataset_path / "gt_corrected_v1"
         self.dense_path = self.dataset_path / "dense"
@@ -33,6 +44,20 @@ class PlantSequencesDataset(Dataset):
 
         # Organize files into sequences
         self.sequences = self._organize_sequences()
+        if len(self.sequences) == 0:
+            raise ValueError(
+                "No sequences found in the dataset. Verify dataset path and file extension (use `use_ply=True` if loading PLY files)."
+            )
+
+        # Build plant timeseries
+        self.plant_timeseries = self._build_plant_timeseries()
+
+        # Apply alignment if requested
+        if self.alignment_method is not None:
+            print(
+                f"Applying {self.alignment_method.upper()} alignment to {len(self.plant_timeseries)} plant sequences..."
+            )
+            self._apply_alignment_to_dataset()
 
     def _organize_sequences(self):
         """Organize files into sequences based on crop type, treatment, and plant number"""
@@ -78,19 +103,47 @@ class PlantSequencesDataset(Dataset):
 
         return dict(sequences)
 
+    def _build_plant_timeseries(self):
+        """Build plant timeseries from organized sequences."""
+        plant_timeseries = []
+
+        for sequence_name, files in self.sequences.items():
+            sequence_data = self.get_sequence_data(sequence_name)
+            plant_timeseries.append(
+                {
+                    "sequence_name": sequence_name,
+                    "timepoints": sequence_data,
+                    "is_aligned": False,
+                    "transformations": [],
+                }
+            )
+
+        return plant_timeseries
+
     def get_sequence_names(self):
         """Get all sequence names"""
-        return list(self.sequences.keys())
+        return [ts["sequence_name"] for ts in self.plant_timeseries]
 
     def get_sequences_by_crop(self, crop_name):
         """Get all sequences for a specific crop"""
-        return {k: v for k, v in self.sequences.items() if k.startswith(crop_name)}
+        return [
+            ts
+            for ts in self.plant_timeseries
+            if ts["sequence_name"].startswith(crop_name)
+        ]
 
     def get_sequences_by_treatment(self, treatment):
         """Get all sequences for a specific treatment"""
-        return {k: v for k, v in self.sequences.items() if treatment in k}
+        return [ts for ts in self.plant_timeseries if treatment in ts["sequence_name"]]
 
-    def get_sequence(self, sequence_name):
+    def get_timeseries_by_sequence_name(self, sequence_name):
+        """Get plant timeseries by sequence name (e.g., 'maize_control_plant2')"""
+        for ts in self.plant_timeseries:
+            if ts["sequence_name"] == sequence_name:
+                return ts
+        return None
+
+    def _get_sequence(self, sequence_name):
         """Get all files for a specific sequence"""
         return self.sequences.get(sequence_name, [])
 
@@ -154,7 +207,7 @@ class PlantSequencesDataset(Dataset):
 
     def get_sequence_data(self, sequence_name):
         """Get all point clouds and leaf tips for a sequence"""
-        files = self.get_sequence(sequence_name)
+        files = self._get_sequence(sequence_name)
         sequence_data = []
 
         for file_path in files:
@@ -201,12 +254,253 @@ class PlantSequencesDataset(Dataset):
 
         return sequence_data
 
+    def _pca_align(self, pc1, pc2):
+        """
+        PCA-based alignment that doesn't require same number of points.
+        Ensures consistent orientation by aligning to reference (pc2) principal components.
+
+        Args:
+            pc1: First point cloud (centered) - to be aligned
+            pc2: Second point cloud (centered) - reference
+
+        Returns:
+            Rotation matrix to align pc1 to pc2's coordinate system
+        """
+
+        def get_pca(pc):
+            pc_centered = pc - pc.mean(axis=0)
+            U, S, Vt = np.linalg.svd(pc_centered, full_matrices=False)
+            is_sorted = np.all(S[:-1] >= S[1:])
+            if not is_sorted:
+                print("Singular values not sorted descending")
+            return Vt  # rows are components
+
+        def align_components_to_reference(components, reference_components):
+            """Align principal components to match reference orientation"""
+            aligned_components = components.copy()
+
+            for i in range(min(len(components), len(reference_components))):
+                # Check dot product to determine if we need to flip
+                dot_product = np.dot(components[i], reference_components[i])
+
+                # If dot product is negative, flip the component to align with reference
+                if dot_product < 0:
+                    aligned_components[i] = -aligned_components[i]
+
+            return aligned_components
+
+        # Get PCA components for both point clouds
+        R1_raw = get_pca(pc1)
+        R2 = get_pca(pc2)
+
+        # Align pc1 components to match pc2 reference orientation
+        R1 = align_components_to_reference(R1_raw, R2)
+
+        # Compute rotation matrix to align pc1 to pc2
+        R = R2.T @ R1
+
+        # Additional check: ensure rotation doesn't introduce a flip
+        # Check if determinant is negative (indicates reflection/flip)
+        if np.linalg.det(R) < 0:
+            print("Reflection detected: flipping first principal component")
+            # If we have a reflection, flip the last principal component
+            R1[0] = -R1[0]
+            R = R2.T @ R1
+
+        return R, R1
+
+    def align_plant_sequence(self, sequence_name, reference_idx=0, method=None):
+        """
+        Align plant sequence using PCA or ICP registration, preserving scale differences.
+        Only removes rotation and translation to show growth over time.
+        Works with different numbers of points between timepoints.
+        Ensures consistent orientation across all timepoints.
+
+        Args:
+            sequence_name: Name of the sequence to align
+            reference_idx: Index of reference timepoint (default: 0)
+            method: Alignment method - 'pca' or 'icp'. If None, uses self.alignment_method
+
+        Returns:
+            List of aligned timepoint data and transformation matrices
+        """
+        method = method or self.alignment_method
+
+        sequence_data = self.get_sequence_data(sequence_name)
+        if len(sequence_data) < 2:
+            return sequence_data, []
+
+        # Get reference timepoint
+        ref_points = sequence_data[reference_idx]["points"]
+        ref_center = np.mean(ref_points, axis=0)
+        ref_centered = ref_points - ref_center
+
+        aligned_sequence = []
+        transformations = []
+
+        for i, timepoint_data in enumerate(sequence_data):
+            points = timepoint_data["points"]
+            center = np.mean(points, axis=0)
+            centered = points - center
+
+            if i == reference_idx:
+                # Reference stays as is (just centered)
+                aligned_points = centered + ref_center
+                rotation_matrix = np.eye(3)
+                basis = np.eye(3)
+                translation = np.zeros(3)
+            else:
+                # Find optimal rotation using selected method
+                if method == "icp":
+                    aligned_centered, rotation_matrix, translation = (
+                        align_plant_pair_icp(
+                            centered,
+                            ref_centered,
+                            max_iterations=500,
+                            convergence_threshold=0.01,
+                        )
+                    )
+                    # ICP already returns aligned points, just translate to reference center
+                    aligned_points = aligned_centered + ref_center
+                    basis = rotation_matrix  # For ICP, basis is same as rotation
+                else:  # pca
+                    rotation_matrix, basis = self._pca_align(centered, ref_centered)
+                    aligned_points = centered @ rotation_matrix.T + ref_center
+                    translation = np.zeros(3)
+
+            # Transform dense points if they exist
+            aligned_dense_points = None
+            if timepoint_data["dense_points"] is not None:
+                dense_points = timepoint_data["dense_points"]
+                dense_centered = dense_points - center
+                if i == reference_idx:
+                    aligned_dense_points = dense_centered + ref_center
+                else:
+                    if method == "icp":
+                        # Apply same ICP transformation
+                        aligned_dense_points = (
+                            dense_centered @ rotation_matrix.T
+                            + translation
+                            + ref_center
+                        )
+                    else:
+                        aligned_dense_points = (
+                            dense_centered @ rotation_matrix.T + ref_center
+                        )
+
+            # Transform leaf tips if they exist
+            aligned_leaf_tip_idxs = timepoint_data["leaf_tip_idxs"]
+            aligned_leaf_tip_coords = None
+            if timepoint_data["leaf_tip_idxs"].size > 0:
+                # Get original leaf tip coordinates
+                original_tip_coords = points[timepoint_data["leaf_tip_idxs"]]
+                # Apply same transformation
+                centered_tips = original_tip_coords - center
+                if i == reference_idx:
+                    aligned_leaf_tip_coords = centered_tips + ref_center
+                else:
+                    if method == "icp":
+                        aligned_leaf_tip_coords = (
+                            centered_tips @ rotation_matrix.T + translation + ref_center
+                        )
+                    else:
+                        aligned_leaf_tip_coords = (
+                            centered_tips @ rotation_matrix.T + ref_center
+                        )
+
+            # Preserve original timepoint structure
+            aligned_tp = timepoint_data.copy()
+            aligned_tp["points"] = aligned_points
+            aligned_tp["dense_points"] = aligned_dense_points
+            aligned_tp["dense_labels"] = timepoint_data["dense_labels"]
+            # Note: leaf_tip_idxs remain the same (indices into aligned points)
+            aligned_sequence.append(aligned_tp)
+
+            transformations.append(
+                {
+                    "day": timepoint_data["day"],
+                    "rotation_matrix": rotation_matrix,
+                    "basis": basis,
+                    "translation": translation,
+                    "original_center": center,
+                    "reference_center": ref_center,
+                    "is_reference": i == reference_idx,
+                    "method": method,
+                }
+            )
+
+        return aligned_sequence, transformations
+
+    def _apply_alignment_to_dataset(self):
+        """Apply alignment (PCA or ICP) to all plant sequences in the dataset."""
+        aligned_timeseries = []
+
+        for plant_ts in self.plant_timeseries:
+            sequence_name = plant_ts["sequence_name"]
+            timepoints = plant_ts["timepoints"]
+
+            if len(timepoints) >= 2:
+                # Apply alignment with first timepoint as reference
+                aligned_data, transformations = self.align_plant_sequence(
+                    sequence_name, reference_idx=0, method=self.alignment_method
+                )
+
+                # Update the timeseries with aligned data
+                aligned_plant_ts = plant_ts.copy()
+                aligned_plant_ts["timepoints"] = aligned_data
+                aligned_plant_ts["is_aligned"] = True
+                aligned_plant_ts["transformations"] = transformations
+
+                aligned_timeseries.append(aligned_plant_ts)
+
+                # Save transformations if requested
+                if self._save_transformations:
+                    self.save_transformations(sequence_name, transformations)
+            else:
+                # Keep original if insufficient timepoints for alignment
+                plant_ts["is_aligned"] = False
+                aligned_timeseries.append(plant_ts)
+
+        # Replace with aligned timeseries
+        self.plant_timeseries = aligned_timeseries
+        print(
+            f"{self.alignment_method.upper()} alignment complete. {sum(1 for ts in self.plant_timeseries if ts['is_aligned'])} sequences aligned."
+        )
+
+    def save_transformations(
+        self, sequence_name, transformations, save_dir="transformations"
+    ):
+        """Save transformation matrices to JSON file for later use."""
+        save_path = self.dataset_path / save_dir
+        save_path.mkdir(parents=True, exist_ok=True)
+
+        filename = f"{sequence_name}_transformations.json"
+        filepath = save_path / filename
+
+        # Convert numpy arrays to lists for JSON serialization
+        json_transformations = []
+        for trans in transformations:
+            json_trans = trans.copy()
+            if isinstance(json_trans.get("rotation_matrix"), np.ndarray):
+                json_trans["rotation_matrix"] = json_trans["rotation_matrix"].tolist()
+            if isinstance(json_trans.get("basis"), np.ndarray):
+                json_trans["basis"] = json_trans["basis"].tolist()
+            if isinstance(json_trans.get("original_center"), np.ndarray):
+                json_trans["original_center"] = json_trans["original_center"].tolist()
+            if isinstance(json_trans.get("reference_center"), np.ndarray):
+                json_trans["reference_center"] = json_trans["reference_center"].tolist()
+            json_transformations.append(json_trans)
+
+        with open(filepath, "w") as f:
+            json.dump(json_transformations, f, indent=2)
+
+        print(f"Transformations saved to {filepath}")
+
     def __len__(self):
-        return len(self.sequences)
+        return len(self.plant_timeseries)
 
     def __getitem__(self, idx):
-        sequence_name = list(self.sequences.keys())[idx]
-        return self.get_sequence_data(sequence_name)
+        return self.plant_timeseries[idx]
 
 
 class LeafSequencesDataset(Dataset):
@@ -215,16 +509,28 @@ class LeafSequencesDataset(Dataset):
         dataset_path: str,
         min_timepoints: int = 3,
         max_timepoints: Optional[int] = None,
-        apply_pca_alignment: bool = False,
+        alignment_method: Optional[str] = None,
         save_transformations: bool = False,
         estimate_normals: bool = False,
         use_ply: bool = False,
     ):
+        """
+        Initialize LeafSequencesDataset.
+
+        Args:
+            dataset_path: Path to TrackPlant3D dataset
+            min_timepoints: Minimum number of timepoints for a leaf sequence
+            max_timepoints: Maximum number of timepoints (None = no limit)
+            alignment_method: Alignment method - None (no alignment) or 'pca' (PCA alignment)
+            save_transformations: If True, save transformation matrices when applying alignment
+            estimate_normals: If True, estimate normals for all leaves
+            use_ply: If True, load from PLY files instead of TXT files
+        """
         self.plant_dataset = PlantSequencesDataset(dataset_path, use_ply=use_ply)
         self.dataset_path = Path(dataset_path)
         self.min_timepoints = min_timepoints
         self.max_timepoints = max_timepoints
-        self.apply_pca_alignment = apply_pca_alignment
+        self.alignment_method = alignment_method
         self._save_transformations = save_transformations
         self.estimate_normals = estimate_normals
 
@@ -236,10 +542,10 @@ class LeafSequencesDataset(Dataset):
                 "No leaf timeseries found with the given parameters. "
                 "Verify dataset path and file extension (use `use_ply=True` if loading PLY files)."
             )
-        # Apply PCA alignment if requested
-        if self.apply_pca_alignment:
+        # Apply alignment if requested
+        if self.alignment_method is not None:
             print(
-                f"Applying PCA alignment to {len(self.leaf_timeseries)} leaf sequences..."
+                f"Applying {self.alignment_method.upper()} alignment to {len(self.leaf_timeseries)} leaf sequences..."
             )
             self._apply_pca_alignment_to_dataset()
 
@@ -640,41 +946,66 @@ if __name__ == "__main__":
 
     dataset_path = Path("data/TrackPlant3D/versions/v1")
 
-    # # Example usage for PlantSequencesDataset
-    # plant_dataset = PlantSequencesDataset(dataset_path)
-    # print("Plant sequences dataset:")
-    # print(f"Number of sequences: {len(plant_dataset)}")
-    # print(
-    #     "Available sequences (first 5):", plant_dataset.get_sequence_names()[:5]
-    # )  # Show first 5
-    # print("\n")
-
-    # Example usage for LeafSequencesDataset
-    print("Creating regular leaf dataset...")
-    leaf_dataset = LeafSequencesDataset(
-        dataset_path, min_timepoints=3, apply_pca_alignment=True, use_ply=True
+    # Example usage for PlantSequencesDataset with alignment
+    print("Creating plant dataset with ICP alignment...")
+    plant_dataset = PlantSequencesDataset(
+        dataset_path,
+        alignment_method="icp",  # or 'pca' or None
+        save_transformations=False,
+        use_ply=True,
     )
-    # print("Leaf timeseries dataset:")
-    # print(f"Number of leaf timeseries: {len(leaf_dataset)}")
+    print("Plant sequences dataset:")
+    print(f"Number of sequences: {len(plant_dataset)}")
+    print(
+        "Available sequences (first 5):", plant_dataset.get_sequence_names()[:5]
+    )  # Show first 5
+    print("\n")
 
-    # info = leaf_dataset.get_leaf_timeseries_info()
-    # print("Dataset info:", info)
-    # print("\n")
+    # Visualize some plant sequences
+    from plant_shape_analysis.vis.plot_functions import visualize_plant_sequence
 
-    # sample = leaf_dataset[0]
-
-    # Visualize some leaf sequences
-    print("Visualizing some leaf sequences...")
-
-    from plant_shape_analysis.vis.plot_functions import visualize_leaf_sequence
-
-    sequences = [
-        "maize_control_plant2_leaf2",
-        "tomato2_control_plant2_leaf1",
-        "tomato2_control_plant3_leaf2",
+    plant_sequences = [
+        "maize_control_plant2",
+        "tomato2_control_plant2",
     ]
 
-    for i, seq in enumerate(sequences):
-        sample = leaf_dataset.get_timeseries_by_sequence_name(seq)
-        print(f"Visualizing leaf sequence {seq} ({i+1}/{len(sequences)})...")
-        visualize_leaf_sequence(sample, dense_points=True)
+    for i, seq in enumerate(plant_sequences):
+        sample = plant_dataset.get_timeseries_by_sequence_name(seq)
+        print(f"Visualizing plant sequence {seq} ({i+1}/{len(plant_sequences)})...")
+        visualize_plant_sequence(
+            sample,
+            dense_points=False,
+            color_by_organ=True,
+            show_leaf_tips=True,
+            spacing=100.0,
+        )
+
+    # # Example usage for LeafSequencesDataset
+    # print("Creating leaf dataset with PCA alignment...")
+    # leaf_dataset = LeafSequencesDataset(
+    #     dataset_path, min_timepoints=3, apply_pca_alignment=True
+    # )
+    # # print("Leaf timeseries dataset:")
+    # # print(f"Number of leaf timeseries: {len(leaf_dataset)}")
+
+    # # info = leaf_dataset.get_leaf_timeseries_info()
+    # # print("Dataset info:", info)
+    # # print("\n")
+
+    # # sample = leaf_dataset[0]
+
+    # # Visualize some leaf sequences
+    # print("Visualizing some leaf sequences...")
+
+    # from plant_shape_analysis.vis.plot_functions import visualize_leaf_sequence
+
+    # sequences = [
+    #     "maize_control_plant2_leaf2",
+    #     "tomato2_control_plant2_leaf1",
+    #     "tomato2_control_plant3_leaf2",
+    # ]
+
+    # for i, seq in enumerate(sequences):
+    #     sample = leaf_dataset.get_timeseries_by_sequence_name(seq)
+    #     print(f"Visualizing leaf sequence {seq} ({i+1}/{len(sequences)})...")
+    #     visualize_leaf_sequence(sample, dense_points=True)
