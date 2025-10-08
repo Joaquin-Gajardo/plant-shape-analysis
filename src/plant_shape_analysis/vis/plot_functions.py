@@ -329,7 +329,7 @@ def visualize_leaf_sequence(
     # Visualize all geometries
     o3d.visualization.draw_geometries(
         geometries,
-        window_name=f"{window_name} - {leaf_timeseries["sequence_name"]} Leaf {leaf_timeseries["leaf_id"]}",
+        window_name=f"{window_name} - {leaf_timeseries['sequence_name']} Leaf {leaf_timeseries['leaf_id']}",
     )
 
 

@@ -4,13 +4,9 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Optional
 
-import matplotlib.pyplot as plt
 import numpy as np
 import open3d as o3d
 from torch.utils.data import Dataset
-
-from plant_shape_analysis.alignment.icp_alignment import align_plant_pair_icp
-from plant_shape_analysis.vis.plot_functions import plot_pairwise_alignment_with_quivers
 
 
 class PlantSequencesDataset(Dataset):
@@ -352,6 +348,11 @@ class PlantSequencesDataset(Dataset):
             else:
                 # Find optimal rotation using selected method
                 if method == "icp":
+                    # Lazy load to avoid sklearn dependency if not using ICP
+                    from plant_shape_analysis.alignment.icp_alignment import (
+                        align_plant_pair_icp,
+                    )
+
                     aligned_centered, rotation_matrix, translation = (
                         align_plant_pair_icp(
                             centered,
@@ -811,7 +812,9 @@ class LeafSequencesDataset(Dataset):
 
         return R, R1
 
-    def align_leaf_sequence(self, leaf_timeseries, reference_idx=0):
+    def align_leaf_sequence(
+        self, leaf_timeseries, reference_idx=0, plot_pairwise_alignment=False
+    ):
         """
         Align leaf sequence using PCA-based registration, preserving scale differences.
         Only removes rotation and translation to show growth over time.
@@ -821,6 +824,7 @@ class LeafSequencesDataset(Dataset):
         Args:
             leaf_timeseries: Leaf timeseries dict from dataset
             reference_idx: Index of reference timepoint (default: 0)
+            plot_pairwise_alignment: If True, plot pairwise alignment for each timepoint to reference (for debugging)
 
         Returns:
             List of aligned point clouds and rotation matrices
@@ -894,12 +898,16 @@ class LeafSequencesDataset(Dataset):
                 }
             )
 
-            # # Plot pairwise alignment
-            # if i == reference_idx:
-            #     continue
-            # plot_pairwise_alignment_with_quivers(
-            #     aligned_timepoints, transformations, idx1=reference_idx, idx2=i
-            # )
+        # Plot pairwise alignment
+        if plot_pairwise_alignment and i != reference_idx:
+            # Lazy import for visualization to avoid heavy dependencies
+            from plant_shape_analysis.vis.plot_functions import (
+                plot_pairwise_alignment_with_quivers,
+            )
+
+            plot_pairwise_alignment_with_quivers(
+                aligned_timepoints, transformations, idx1=reference_idx, idx2=i
+            )
 
         return aligned_timepoints, transformations
 
