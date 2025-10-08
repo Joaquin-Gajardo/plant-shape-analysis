@@ -349,9 +349,14 @@ class PlantSequencesDataset(Dataset):
                 # Find optimal rotation using selected method
                 if method == "icp":
                     # Lazy load to avoid sklearn dependency if not using ICP
-                    from plant_shape_analysis.alignment.icp_alignment import (
-                        align_plant_pair_icp,
-                    )
+                    try:
+                        from plant_shape_analysis.alignment.icp_alignment import (
+                            align_plant_pair_icp,
+                        )
+                    except ImportError:
+                        raise ImportError(
+                            "ICP alignment requires 'scikit-learn'. Install it with `pip install scikit-learn`."
+                        )
 
                     aligned_centered, rotation_matrix, translation = (
                         align_plant_pair_icp(

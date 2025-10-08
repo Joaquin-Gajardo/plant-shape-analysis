@@ -2,14 +2,24 @@
 A repository for reconstructing and analyzing plant shape evolution using implicit neural representations, with a focus on leaf surface fitting and trait extraction from 3D point clouds.
 
 
-## Setup
-Create a python environment with pymeshlab, plyfile, open3D, pytorch, e.g. using conda:
+## Installation
+
+### Minimal installation (dataloaders only)
+For using just the dataloaders in other projects (e.g., CanFields):
 ```bash
-conda create -n plant-shape-analysis python==3.12
+git clone https://github.com/Joaquin-Gajardo/plant-shape-analysis.git
+pip install -e .
+```
+This installs only core dependencies: numpy, torch, open3d
+
+### Complete setup for development
+For full functionality including visualization, alignment, and experiments:
+```bash
+conda create -n plant-shape-analysis python>=3.9 # was tested with 3.12
 conda activate plant-shape-analysis
 # conda install -c conda-forge gcc gxx  # Optional: for X forwarding open3d window with PuTTy and XLaunch
-conda install ipykernel # for Jupyter notebooks in VSCode
-pip install -e . # install package
+conda install ipykernel  # for Jupyter notebooks in VSCode
+pip install -e .[full]   # install package with all dependencies
 ```
 
 <details>
@@ -52,17 +62,26 @@ rm v1.zip
 ```
 
 #### Dataloader
-We provide a dataloader for the TrackPlant3D dataset in [src/plant_shape_analysis/dataloaders/trackplant3D.py](src/plant_shape_analysis/dataloaders/trackplant3D.py). It contains the following classes:
+We provide PyTorch Dataset classes for loading the TrackPlant3D dataset:
 
-- `PlantSequencesDataset`: A PyTorch Dataset class for loading the TrackPlant3D dataset plants as temporal sequence.
-- `LeafSequencesDataset`: A PyTorch Dataset class for loading the TrackPlant3D dataset as organ temporal sequences, using the organ segmentation label on each plant. One can estimate normals and align the leaves using PCA.
+- `PlantSequencesDataset`: Load plants as temporal sequences
+- `LeafSequencesDataset`: Load individual leaves as temporal sequences with optional PCA alignment and normal estimation
 
-Example usage of the `LeafSequencesDataset`:
+Example usage:
 ```python
-from src.plant_shape_analysis.dataloaders.trackplant3D import LeafSequencesDataset
+from pathlib import Path
+from plant_shape_analysis import PlantSequencesDataset, LeafSequencesDataset
 
 dataset_path = Path("data/TrackPlant3D/versions/v1")
-leaf_dataset = LeafSequencesDataset(dataset_path, min_timepoints=2, align_pca=True, estimate_normals=True)
+
+# Load leaf sequences with alignment
+leaf_dataset = LeafSequencesDataset(
+    dataset_path,
+    min_timepoints=2,
+    alignment_method='pca',
+    estimate_normals=True,
+    use_ply=True
+)
 
 # List all sequence names
 print(leaf_dataset.get_sequence_names())
@@ -85,6 +104,7 @@ python src/plant_shape_analysis/dataloaders/trackplant3D.py
 ```
 
 ## Training
+Make sure you have the full installation with all dependencies.
 ### Fit static leaf surface
 
 #### SIREN

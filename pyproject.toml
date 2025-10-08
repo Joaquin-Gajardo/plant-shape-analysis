@@ -1,15 +1,30 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "plant-shape-analysis"
 version = "0.1.0"
-dynamic = ["dependencies"]
-requires-python = ">=3.12"
+description = "Plant shape analysis and reconstruction using implicit neural representations"
+readme = "README.md"
+requires-python = ">=3.9"
 
-[tool.setuptools.dynamic]
-dependencies = {file = ["requirements.txt"]}
+# Core dependencies - minimal for dataloaders
+dependencies = [
+    "numpy",
+    "torch",
+    "open3d",
+]
+
+[project.optional-dependencies]
+# Full installation with all dependencies
+full = [
+    "plyfile",
+    "pymeshlab",
+    "scikit-image",
+    "wandb",
+    "natsort",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
