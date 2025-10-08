@@ -16,6 +16,7 @@ class PlantSequencesDataset(Dataset):
         use_ply=False,
         alignment_method=None,
         save_transformations=False,
+        auto_download=True,
     ):
         """
         Initialize PlantSequencesDataset.
@@ -25,8 +26,21 @@ class PlantSequencesDataset(Dataset):
             use_ply: If True, load from PLY files instead of TXT files. Keeping both options for compatibility to original dataset format.
             alignment_method: Alignment method - None (no alignment), 'pca' (fast, approximate), or 'icp' (slower, more accurate)
             save_transformations: If True, save transformation matrices when applying alignment
+            auto_download: If True, automatically download dataset if not found (default: True)
         """
         self.dataset_path = Path(dataset_path)
+
+        # Auto-download dataset if it doesn't exist
+        if auto_download and not self.dataset_path.exists():
+            from plant_shape_analysis.utils.download_dataset import download_trackplant3d
+            print(f"Dataset not found at {self.dataset_path}")
+            print("Attempting to download...")
+            self.dataset_path = download_trackplant3d(
+                target_dir=self.dataset_path.parent,
+                version=self.dataset_path.name,
+                verbose=True
+            )
+
         self.use_ply = use_ply
         self.file_extension = "*.ply" if use_ply else "*.txt"
         self.alignment_method = alignment_method
@@ -519,6 +533,7 @@ class LeafSequencesDataset(Dataset):
         save_transformations: bool = False,
         estimate_normals: bool = False,
         use_ply: bool = False,
+        auto_download: bool = True,
     ):
         """
         Initialize LeafSequencesDataset.
@@ -531,8 +546,11 @@ class LeafSequencesDataset(Dataset):
             save_transformations: If True, save transformation matrices when applying alignment
             estimate_normals: If True, estimate normals for all leaves
             use_ply: If True, load from PLY files instead of TXT files
+            auto_download: If True, automatically download dataset if not found (default: True)
         """
-        self.plant_dataset = PlantSequencesDataset(dataset_path, use_ply=use_ply)
+        self.plant_dataset = PlantSequencesDataset(
+            dataset_path, use_ply=use_ply, auto_download=auto_download
+        )
         self.dataset_path = Path(dataset_path)
         self.min_timepoints = min_timepoints
         self.max_timepoints = max_timepoints
