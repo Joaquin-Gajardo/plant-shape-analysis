@@ -12,16 +12,14 @@ from torch.utils.data import Dataset
 class PlantSequencesDataset(Dataset):
     DATASET_CONFIGS = {
         "v1": {
-            "data_dirs": {
-                "sparse": "gt_corrected_v1",
-                "dense": "dense"
-            },
+            "data_dirs": {"sparse": "gt_corrected_v1", "dense": "dense"},
             "download_info": {
                 "url": "https://polybox.ethz.ch/index.php/s/mxiZwKfCfd39Rxx/download",
                 "filename": "v1.zip",
+                "extract_dir": "v1",
                 "size_mb": 751,
-                "description": "TrackPlant3D v1 dataset with leaf keypoint annotations and dense point clouds"
-            }
+                "description": "TrackPlant3D v1 dataset with leaf keypoint annotations and dense point clouds",
+            },
         }
     }
 
@@ -45,9 +43,6 @@ class PlantSequencesDataset(Dataset):
             save_transformations: If True, save transformation matrices when applying alignment
             auto_download: If True, automatically download dataset if not found (default: True)
         """
-        self.dataset_path = Path(dataset_path)
-        self.version = version
-
         # Validate version and get config
         if version not in self.DATASET_CONFIGS:
             raise ValueError(
@@ -56,16 +51,22 @@ class PlantSequencesDataset(Dataset):
 
         config = self.DATASET_CONFIGS[version]
         data_dirs = config["data_dirs"]
+        extract_dir = config["download_info"]["extract_dir"]
 
-        # Auto-download dataset if it doesn't exist
+        # Always expect dataset at dataset_path/extract_dir
+        self.dataset_path = Path(dataset_path) / extract_dir
+        self.version = version
+
+        # Auto-download if version directory doesn't exist
         if auto_download and not self.dataset_path.exists():
-            from plant_shape_analysis.utils.download_dataset import download_trackplant3d
+            from plant_shape_analysis.utils.download_dataset import (
+                download_trackplant3d,
+            )
+
             print(f"Dataset not found at {self.dataset_path}")
             print("Attempting to download...")
             self.dataset_path = download_trackplant3d(
-                target_dir=self.dataset_path.parent,
-                version=version,
-                verbose=True
+                target_dir=dataset_path, version=version, verbose=True
             )
 
         self.use_ply = use_ply

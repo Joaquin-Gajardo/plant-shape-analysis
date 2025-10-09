@@ -75,7 +75,7 @@ Example usage:
 from pathlib import Path
 from plant_shape_analysis import PlantSequencesDataset, LeafSequencesDataset
 
-dataset_path = Path("data/TrackPlant3D/versions/v1")
+dataset_path = Path("data/TrackPlant3D/versions")
 
 # Load leaf sequences with alignment
 leaf_dataset = LeafSequencesDataset(

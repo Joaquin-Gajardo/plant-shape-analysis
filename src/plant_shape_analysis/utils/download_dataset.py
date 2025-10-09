@@ -2,7 +2,6 @@
 Utility functions for downloading datasets.
 """
 
-import os
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -32,7 +31,7 @@ def _get_dataset_config(version: str):
     return {
         "url": config["download_info"]["url"],
         "filename": config["download_info"]["filename"],
-        "extract_dir": version,
+        "extract_dir": config["download_info"]["extract_dir"],
         "size_mb": config["download_info"]["size_mb"],
         "description": config["download_info"]["description"],
         "expected_dirs": list(config["data_dirs"].values()),
@@ -62,6 +61,10 @@ def download_trackplant3d(
         >>> dataset_path = download_trackplant3d()
         >>> print(f"Dataset available at: {dataset_path}")
     """
+    # Get dataset info from PlantSequencesDataset config
+    dataset_info = _get_dataset_config(version)
+    extract_dir = dataset_info["extract_dir"]
+
     # Determine target directory
     if target_dir is None:
         # Default to data/TrackPlant3D/versions/ relative to package root
@@ -70,7 +73,7 @@ def download_trackplant3d(
     else:
         target_dir = Path(target_dir)
 
-    dataset_path = target_dir / version
+    dataset_path = target_dir / extract_dir
 
     # Check if dataset already exists
     if dataset_path.exists() and not force:
@@ -79,8 +82,7 @@ def download_trackplant3d(
             print("Use force=True to re-download")
         return dataset_path
 
-    # Get dataset info from PlantSequencesDataset config
-    dataset_info = _get_dataset_config(version)
+    # Extract remaining info
     url = dataset_info["url"]
     filename = dataset_info["filename"]
     size_mb = dataset_info["size_mb"]
