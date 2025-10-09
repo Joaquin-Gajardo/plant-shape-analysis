@@ -10,9 +10,25 @@ from torch.utils.data import Dataset
 
 
 class PlantSequencesDataset(Dataset):
+    DATASET_CONFIGS = {
+        "v1": {
+            "data_dirs": {
+                "sparse": "gt_corrected_v1",
+                "dense": "dense"
+            },
+            "download_info": {
+                "url": "https://polybox.ethz.ch/index.php/s/mxiZwKfCfd39Rxx/download",
+                "filename": "v1.zip",
+                "size_mb": 751,
+                "description": "TrackPlant3D v1 dataset with leaf keypoint annotations and dense point clouds"
+            }
+        }
+    }
+
     def __init__(
         self,
         dataset_path,
+        version="v1",
         use_ply=False,
         alignment_method=None,
         save_transformations=False,
@@ -23,12 +39,23 @@ class PlantSequencesDataset(Dataset):
 
         Args:
             dataset_path: Path to TrackPlant3D dataset
+            version: Dataset version (default: "v1")
             use_ply: If True, load from PLY files instead of TXT files. Keeping both options for compatibility to original dataset format.
             alignment_method: Alignment method - None (no alignment), 'pca' (fast, approximate), or 'icp' (slower, more accurate)
             save_transformations: If True, save transformation matrices when applying alignment
             auto_download: If True, automatically download dataset if not found (default: True)
         """
         self.dataset_path = Path(dataset_path)
+        self.version = version
+
+        # Validate version and get config
+        if version not in self.DATASET_CONFIGS:
+            raise ValueError(
+                f"Unknown version: {version}. Available: {list(self.DATASET_CONFIGS.keys())}"
+            )
+
+        config = self.DATASET_CONFIGS[version]
+        data_dirs = config["data_dirs"]
 
         # Auto-download dataset if it doesn't exist
         if auto_download and not self.dataset_path.exists():
@@ -37,7 +64,7 @@ class PlantSequencesDataset(Dataset):
             print("Attempting to download...")
             self.dataset_path = download_trackplant3d(
                 target_dir=self.dataset_path.parent,
-                version=self.dataset_path.name,
+                version=version,
                 verbose=True
             )
 
@@ -46,8 +73,9 @@ class PlantSequencesDataset(Dataset):
         self.alignment_method = alignment_method
         self._save_transformations = save_transformations
 
-        self.point_clouds_path = self.dataset_path / "gt_corrected_v1"
-        self.dense_path = self.dataset_path / "dense"
+        # Set paths from config
+        self.sparse_path = self.dataset_path / data_dirs["sparse"]
+        self.dense_path = self.dataset_path / data_dirs["dense"]
 
         # This is only used when using txt files, as PLY files have leaf tips as a scalar field (sparse ones)
         self.leaf_tips_path = self.dataset_path / "keypoints" / "leaf_tips"
@@ -74,7 +102,7 @@ class PlantSequencesDataset(Dataset):
         sequences = defaultdict(list)
 
         # Get all crop folders
-        crop_folders = [d for d in self.point_clouds_path.iterdir() if d.is_dir()]
+        crop_folders = [d for d in self.sparse_path.iterdir() if d.is_dir()]
 
         for crop_folder in crop_folders:
             crop_name = crop_folder.name
@@ -527,6 +555,7 @@ class LeafSequencesDataset(Dataset):
     def __init__(
         self,
         dataset_path: str,
+        version: str = "v1",
         min_timepoints: int = 3,
         max_timepoints: Optional[int] = None,
         alignment_method: Optional[str] = None,
@@ -540,6 +569,7 @@ class LeafSequencesDataset(Dataset):
 
         Args:
             dataset_path: Path to TrackPlant3D dataset
+            version: Dataset version (default: "v1")
             min_timepoints: Minimum number of timepoints for a leaf sequence
             max_timepoints: Maximum number of timepoints (None = no limit)
             alignment_method: Alignment method - None (no alignment) or 'pca' (PCA alignment)
@@ -549,7 +579,7 @@ class LeafSequencesDataset(Dataset):
             auto_download: If True, automatically download dataset if not found (default: True)
         """
         self.plant_dataset = PlantSequencesDataset(
-            dataset_path, use_ply=use_ply, auto_download=auto_download
+            dataset_path, version=version, use_ply=use_ply, auto_download=auto_download
         )
         self.dataset_path = Path(dataset_path)
         self.min_timepoints = min_timepoints
@@ -981,6 +1011,7 @@ if __name__ == "__main__":
     print("Creating plant dataset with ICP alignment...")
     plant_dataset = PlantSequencesDataset(
         dataset_path,
+        version="v1",
         alignment_method="icp",  # or 'pca' or None
         save_transformations=False,
         use_ply=True,

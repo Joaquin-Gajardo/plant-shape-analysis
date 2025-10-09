@@ -9,16 +9,34 @@ from pathlib import Path
 from typing import Optional
 
 
-DATASETS = {
-    "trackplant3d_v1": {
-        "url": "https://polybox.ethz.ch/index.php/s/mxiZwKfCfd39Rxx/download",
-        "filename": "v1.zip",
-        "extract_dir": "v1",
-        "size_mb": 751,
-        "description": "TrackPlant3D v1 dataset with leaf keypoint annotations and dense point clouds",
-        "expected_dirs": ["gt_corrected_v1", "dense"],  # keypoints are in PLY files
+def _get_dataset_config(version: str):
+    """
+    Get dataset configuration from PlantSequencesDataset.
+
+    Args:
+        version: Dataset version (e.g., "v1")
+
+    Returns:
+        Dictionary with download_info and expected_dirs
+    """
+    # Import here to avoid circular dependency
+    from plant_shape_analysis.dataloaders.trackplant3D import PlantSequencesDataset
+
+    if version not in PlantSequencesDataset.DATASET_CONFIGS:
+        raise ValueError(
+            f"Unknown dataset version: {version}. "
+            f"Available: {list(PlantSequencesDataset.DATASET_CONFIGS.keys())}"
+        )
+
+    config = PlantSequencesDataset.DATASET_CONFIGS[version]
+    return {
+        "url": config["download_info"]["url"],
+        "filename": config["download_info"]["filename"],
+        "extract_dir": version,
+        "size_mb": config["download_info"]["size_mb"],
+        "description": config["download_info"]["description"],
+        "expected_dirs": list(config["data_dirs"].values()),
     }
-}
 
 
 def download_trackplant3d(
@@ -61,14 +79,8 @@ def download_trackplant3d(
             print("Use force=True to re-download")
         return dataset_path
 
-    # Get dataset info
-    dataset_key = f"trackplant3d_{version}"
-    if dataset_key not in DATASETS:
-        raise ValueError(
-            f"Unknown dataset version: {version}. Available: {list(DATASETS.keys())}"
-        )
-
-    dataset_info = DATASETS[dataset_key]
+    # Get dataset info from PlantSequencesDataset config
+    dataset_info = _get_dataset_config(version)
     url = dataset_info["url"]
     filename = dataset_info["filename"]
     size_mb = dataset_info["size_mb"]
@@ -160,11 +172,8 @@ def check_dataset_exists(dataset_path: Path, version: str = "v1") -> bool:
         return False
 
     # Get expected directories for this version
-    dataset_key = f"trackplant3d_{version}"
-    if dataset_key not in DATASETS:
-        raise ValueError(f"Unknown dataset version: {version}")
-
-    expected_dirs = DATASETS[dataset_key]["expected_dirs"]
+    dataset_info = _get_dataset_config(version)
+    expected_dirs = dataset_info["expected_dirs"]
     return all((dataset_path / d).exists() for d in expected_dirs)
 
 
