@@ -110,7 +110,8 @@ def extract_mesh(
                              If None, will try to load from checkpoint. Pass False to disable transformation.
     """
     # Load checkpoint (handles both old and new formats)
-    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    # Note: weights_only=False is needed because we save numpy arrays in transform_params
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 
     # Handle both old format (just state_dict) and new format (dict with keys)
     if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
