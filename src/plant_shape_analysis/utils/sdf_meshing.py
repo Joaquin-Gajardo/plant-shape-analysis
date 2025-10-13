@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 
 def create_mesh(
-    decoder, filename, N=256, max_batch=64**3, offset=None, scale=None, iso_level=0.0, format="ply"
+    decoder, filename, N=256, max_batch=64**3, offset=None, scale=None, iso_level=0.0, format="ply", inverse_transform=None
 ):
     decoder.eval()
 
@@ -67,8 +67,9 @@ def create_mesh(
         offset,
         scale,
         iso_level=iso_level,
+        inverse_transform=inverse_transform,
     )
-    
+
     # Export to the specified format
     if format.lower() == "ply":
         save_mesh_as_ply(mesh_points, faces, filename)
@@ -163,10 +164,17 @@ def extract_mesh_from_sdf(
     offset=None,
     scale=None,
     iso_level=0.0,
+    inverse_transform=None,
 ):
     """
     Extract mesh from SDF using marching cubes
-    
+
+    Args:
+        inverse_transform: Can be either:
+                          - A callable that takes mesh_points and returns transformed points
+                          - A dict with keys 'center', 'coord_min', 'coord_max', 'scale' for backwards compatibility
+                          - None to use legacy offset/scale behavior
+
     Returns:
         mesh_points: numpy array of vertices
         faces: numpy array of face indices
@@ -187,11 +195,25 @@ def extract_mesh_from_sdf(
     mesh_points[:, 1] = voxel_grid_origin[1] + verts[:, 1]
     mesh_points[:, 2] = voxel_grid_origin[2] + verts[:, 2]
 
-    # apply additional offset and scale
-    if scale is not None:
-        mesh_points = mesh_points / scale
-    if offset is not None:
-        mesh_points = mesh_points - offset
+    # Apply inverse transformation
+    if callable(inverse_transform):
+        # Use the provided callable
+        print("Applying inverse transformation to mesh vertices...")
+        mesh_points = inverse_transform(mesh_points)
+    elif isinstance(inverse_transform, dict):
+        # Backwards compatibility: transform_params dict
+        print("Applying inverse transformation to mesh vertices...")
+        # Inverse transformation from normalized [-1, 1] to original scale
+        mesh_points = mesh_points / 2.0  # [-1, 1] -> [-0.5, 0.5]
+        mesh_points = mesh_points + 0.5  # [-0.5, 0.5] -> [0, 1]
+        mesh_points = mesh_points * inverse_transform['scale'] + inverse_transform['coord_min']  # [0, 1] -> centered original scale
+        mesh_points = mesh_points + inverse_transform['center']  # Add back original center
+    else:
+        # apply additional offset and scale (legacy behavior)
+        if scale is not None:
+            mesh_points = mesh_points / scale
+        if offset is not None:
+            mesh_points = mesh_points - offset
 
     return mesh_points, faces
 

@@ -154,15 +154,24 @@ class PointCloudSiren(Dataset):
         coords = point_cloud[:, :3]
         self.normals = point_cloud[:, 3:]
 
+        # Store transformation parameters for later inversion
+        self.center = np.mean(coords, axis=0, keepdims=True)
+        self.keep_aspect_ratio = keep_aspect_ratio
+
         # Reshape point cloud such that it lies in bounding box of (-1, 1) (distorts geometry, but makes for high
         # sample efficiency)
-        coords -= np.mean(coords, axis=0, keepdims=True)
+        coords -= self.center
         if keep_aspect_ratio:
             coord_max = np.amax(coords)
             coord_min = np.amin(coords)
         else:
             coord_max = np.amax(coords, axis=0, keepdims=True)
             coord_min = np.amin(coords, axis=0, keepdims=True)
+
+        # Store min/max for inverse transformation
+        self.coord_min = coord_min
+        self.coord_max = coord_max
+        self.scale = coord_max - coord_min
 
         self.coords = (coords - coord_min) / (coord_max - coord_min)
         self.coords -= 0.5
@@ -263,6 +272,48 @@ class PointCloudSiren(Dataset):
             "sdf": torch.from_numpy(sdf).float(),
             "normals": torch.from_numpy(normals).float(),
         }
+
+    def inverse_transform(self, normalized_coords):
+        """
+        Transform coordinates from normalized [-1, 1] space back to original scale.
+
+        Args:
+            normalized_coords: array of shape (N, 3) with coordinates in [-1, 1] range
+
+        Returns:
+            original_coords: array of shape (N, 3) with coordinates in original scale
+        """
+        # Reverse the normalization steps
+        coords = normalized_coords / 2.0  # [-1, 1] -> [-0.5, 0.5]
+        coords = coords + 0.5  # [-0.5, 0.5] -> [0, 1]
+        coords = coords * self.scale + self.coord_min  # [0, 1] -> centered original scale
+        coords = coords + self.center  # Add back original center
+        return coords
+
+    def get_transform_dict(self):
+        """
+        Get a dictionary of transformation parameters for saving with checkpoints.
+
+        Returns:
+            dict with transformation parameters
+        """
+        return {
+            "center": self.center,
+            "coord_min": self.coord_min,
+            "coord_max": self.coord_max,
+            "scale": self.scale,
+            "keep_aspect_ratio": self.keep_aspect_ratio,
+        }
+
+    def get_inverse_transform_fn(self):
+        """
+        Get a callable that applies the inverse transformation.
+        This is useful for passing to mesh extraction functions.
+
+        Returns:
+            callable: function that takes normalized coordinates and returns original scale coordinates
+        """
+        return self.inverse_transform
 
 
 def get_gradient(y, x, grad_outputs=None):

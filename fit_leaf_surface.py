@@ -35,7 +35,10 @@ def get_leaf(
 
     # We just want a single leaf so to save time we don't estimate normals of all leaves or align thems
     leaf_sequences = LeafSequencesDataset(
-        data_path, estimate_normals=False, apply_pca_alignment=False, use_ply=use_ply
+        data_path,
+        estimate_normals=False,
+        alignment_method=None,
+        use_ply=use_ply,
     )
 
     # Get leaf timeseries by sequence name
@@ -81,7 +84,7 @@ def get_leaf(
         sampling_strategy=sampling_strategy,
     )
 
-    return dataset, leaf_name
+    return dataset, leaf_name, dataset.get_inverse_transform_fn()
 
 
 def extract_mesh(
@@ -91,7 +94,33 @@ def extract_mesh(
     N: int = 512,
     iso_level: float = 0.0,
     format: str = "ply",
+    inverse_transform_fn=None,
 ):
+    """
+    Extract mesh from a trained SIREN model checkpoint.
+
+    Args:
+        checkpoint_path: Path to model checkpoint (.pth file)
+        out_mesh_path: Path where mesh will be saved
+        model_kwargs: Dictionary with model architecture parameters
+        N: Resolution for marching cubes grid
+        iso_level: ISO level for marching cubes
+        format: Output format ('ply' or 'obj')
+        inverse_transform_fn: Optional callable that transforms mesh from normalized to original coordinates.
+                             If None, will try to load from checkpoint. Pass False to disable transformation.
+    """
+    # Load checkpoint (handles both old and new formats)
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+
+    # Handle both old format (just state_dict) and new format (dict with keys)
+    if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+        model_state_dict = checkpoint["model_state_dict"]
+        transform_params = checkpoint.get("transform_params", None)
+    else:
+        # Old format: checkpoint is directly the state_dict
+        model_state_dict = checkpoint
+        transform_params = None
+
     class SDFDecoder(torch.nn.Module):
         def __init__(self):
             super().__init__()
@@ -102,10 +131,8 @@ def extract_mesh(
                 out_features=model_kwargs.get("out_features", 1),
                 outermost_linear=model_kwargs.get("outermost_linear", True),
             )
+            self.model.load_state_dict(model_state_dict)
             if torch.cuda.is_available():
-                self.model.load_state_dict(
-                    torch.load(checkpoint_path, map_location="cpu")
-                )
                 self.model.cuda()
 
             self.model.eval()
@@ -114,8 +141,28 @@ def extract_mesh(
             return self.model(coords)["model_out"]
 
     sdf_decoder = SDFDecoder()
+
+    # Determine what transformation to apply
+    # If inverse_transform_fn is explicitly False, don't transform
+    # If inverse_transform_fn is provided (callable), use it
+    # If inverse_transform_fn is None, try to use transform_params from checkpoint
+    if inverse_transform_fn is False:
+        transform_to_use = None
+    elif callable(inverse_transform_fn):
+        transform_to_use = inverse_transform_fn
+    elif transform_params is not None:
+        # Create inverse transform from saved params
+        transform_to_use = transform_params
+    else:
+        transform_to_use = None
+
     sdf_meshing.create_mesh(
-        sdf_decoder, out_mesh_path, N=N, iso_level=iso_level, format=format
+        sdf_decoder,
+        out_mesh_path,
+        N=N,
+        iso_level=iso_level,
+        format=format,
+        inverse_transform=transform_to_use,
     )
 
 
@@ -142,7 +189,7 @@ def main(
     print(f"Using device: {device}")
 
     # Get leaf point cloud to fit
-    sample, leaf_name = get_leaf(
+    sample, leaf_name, inverse_transform_fn = get_leaf(
         data_path=data_path,
         use_ply=use_ply,
         sequence_name=sequence_name,
@@ -270,7 +317,12 @@ def main(
                     temp_checkpoint = experiment_path / f"temp_epoch_{epoch}.pth"
                     temp_mesh_path = experiment_path / f"mesh_epoch_{epoch}_res128.obj"
 
-                    torch.save(model.state_dict(), temp_checkpoint)
+                    # Save with transformation parameters
+                    temp_checkpoint_data = {
+                        "model_state_dict": model.state_dict(),
+                        "transform_params": sample.get_transform_dict(),
+                    }
+                    torch.save(temp_checkpoint_data, temp_checkpoint)
                     extract_mesh(
                         temp_checkpoint,
                         temp_mesh_path,
@@ -281,6 +333,7 @@ def main(
                         N=128,
                         iso_level=0.0,
                         format="obj",
+                        inverse_transform_fn=inverse_transform_fn,
                     )
 
                     if temp_mesh_path.exists() and logger == "wandb":
@@ -295,7 +348,12 @@ def main(
                 if logger == "wandb":
                     wandb.log(log_data)
 
-    torch.save(model.state_dict(), checkpoint_path)
+    # Save model state dict along with transformation parameters
+    checkpoint = {
+        "model_state_dict": model.state_dict(),
+        "transform_params": sample.get_transform_dict(),
+    }
+    torch.save(checkpoint, checkpoint_path)
     print(f"Training complete. Model saved to {checkpoint_path}")
 
     # Extract mesh
@@ -309,6 +367,7 @@ def main(
         },
         N=resolution,
         format="ply",
+        inverse_transform_fn=inverse_transform_fn,
     )
 
     # Log final mesh to wandb
