@@ -203,11 +203,15 @@ def stem_alignment(
         if align_to_first:
             # Align to first frame (reference-based)
             target_tp = results[0]
-            print(f"\nAligning Day {curr_tp['day']} to Day {target_tp['day']} (reference)")
+            print(
+                f"\nAligning Day {curr_tp['day']} to Day {target_tp['day']} (reference)"
+            )
         else:
             # Align to previous frame (sequential)
             target_tp = results[i - 1]
-            print(f"\nAligning Day {curr_tp['day']} to Day {target_tp['day']} (sequential)")
+            print(
+                f"\nAligning Day {curr_tp['day']} to Day {target_tp['day']} (sequential)"
+            )
 
         # Align current to target (using target aligned points)
         trans, rot, error = stem_based_alignment(
@@ -237,6 +241,109 @@ def stem_alignment(
         )
 
     return results
+
+
+def two_stage_alignment(
+    timepoints,
+    use_rotation=True,
+    max_iterations=200,
+    align_to_first=False,
+    base_percentile=10,
+):
+    """
+    Two-stage alignment:
+    Stage 1: Stem-based ICP (rotation + translation)
+    Stage 2: Vertical shift correction using stem base centroid
+
+    Args:
+        timepoints: List of timepoint dictionaries
+        use_rotation: Whether to use rotation in stage 1
+        max_iterations: Max ICP iterations
+        align_to_first: If True, align all to first frame. If False, sequential (to previous)
+        base_percentile: Use lowest X% of stem points for vertical correction (default: 10%)
+
+    Returns:
+        results: List of alignment results after both stages
+    """
+    # STAGE 1: Regular stem alignment
+    print("STAGE 1: Stem-based alignment (rotation + translation)")
+    stage1_results = stem_alignment(
+        timepoints,
+        use_rotation=use_rotation,
+        max_iterations=max_iterations,
+        align_to_first=align_to_first,
+    )
+
+    # STAGE 2: Vertical shift correction
+    print("\n" + "=" * 80)
+    print(f"STAGE 2: Vertical shift correction (lowest {base_percentile}% of stem)")
+    print("=" * 80)
+
+    stage2_results = []
+
+    # First timepoint stays the same
+    stage2_results.append(stage1_results[0].copy())
+
+    for i in range(1, len(stage1_results)):
+        curr_result = stage1_results[i]
+
+        if align_to_first:
+            # Compare to first frame
+            target_result = stage2_results[0]
+        else:
+            # Compare to previous frame
+            target_result = stage2_results[i - 1]
+
+        print(f"\nRefining vertical alignment for Day {curr_result['day']}")
+
+        # Get stem points from current aligned result
+        curr_stem_mask = curr_result["aligned_labels"] == 0
+        curr_stem = curr_result["aligned_points"][curr_stem_mask]
+
+        # Get stem points from target aligned result
+        target_stem_mask = target_result["aligned_labels"] == 0
+        target_stem = target_result["aligned_points"][target_stem_mask]
+
+        if len(curr_stem) == 0 or len(target_stem) == 0:
+            print("  Warning: No stem points, skipping vertical correction")
+            stage2_results.append(curr_result.copy())
+            continue
+
+        # Get lowest X% of stem points by Z coordinate
+        curr_z_threshold = np.percentile(curr_stem[:, 2], base_percentile)
+        target_z_threshold = np.percentile(target_stem[:, 2], base_percentile)
+
+        curr_base = curr_stem[curr_stem[:, 2] <= curr_z_threshold]
+        target_base = target_stem[target_stem[:, 2] <= target_z_threshold]
+
+        print(
+            f"  Stem base points - Current: {len(curr_base)}, Target: {len(target_base)}"
+        )
+
+        # Compute centroids of stem base
+        curr_base_centroid = np.mean(curr_base, axis=0)
+        target_base_centroid = np.mean(target_base, axis=0)
+
+        # Compute Z-shift only
+        z_shift = target_base_centroid[2] - curr_base_centroid[2]
+        print(f"  Z-shift: {z_shift:.4f} mm")
+
+        # Apply Z-shift
+        z_correction = np.array([0, 0, z_shift])
+        aligned_points_stage2 = curr_result["aligned_points"] + z_correction
+
+        stage2_results.append(
+            {
+                "day": curr_result["day"],
+                "translation": z_correction,
+                "rotation": np.eye(3),
+                "error": 0.0,  # Not computed for stage 2
+                "aligned_points": aligned_points_stage2,
+                "aligned_labels": curr_result["aligned_labels"],
+            }
+        )
+
+    return stage2_results
 
 
 def main():
@@ -284,6 +391,15 @@ def main():
         timepoints, use_rotation=True, align_to_first=True
     )
 
+    # Two-stage sequential alignment with vertical correction
+    print("\n" + "=" * 80)
+    print("TWO-STAGE SEQUENTIAL ALIGNMENT (with vertical correction)")
+    print("=" * 80)
+
+    two_stage_results = two_stage_alignment(
+        timepoints, use_rotation=True, align_to_first=False, base_percentile=10
+    )
+
     # Save aligned sequences
     print("\n" + "=" * 80)
     print("SAVING ALIGNED SEQUENCES")
@@ -305,10 +421,19 @@ def main():
         method_name="reference_stem",
     )
 
+    print("\nSaving two-stage alignment...")
+    output_dir3 = save_aligned_sequence(
+        two_stage_results,
+        sequence_name,
+        output_dir="output/aligned_sequences",
+        method_name="two_stage_sequential",
+    )
+
     print(f"\n{'='*80}")
     print("✓ Aligned sequences saved!")
     print(f"  Sequential (to previous): {output_dir1}")
     print(f"  Reference (to first): {output_dir2}")
+    print(f"  Two-stage sequential: {output_dir3}")
     print(f"{'='*80}")
 
 
