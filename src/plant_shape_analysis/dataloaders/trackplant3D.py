@@ -39,7 +39,7 @@ class PlantSequencesDataset(Dataset):
             dataset_path: Path to TrackPlant3D dataset
             version: Dataset version (default: "v1")
             use_ply: If True, load from PLY files instead of TXT files. Keeping both options for compatibility to original dataset format.
-            alignment_method: Alignment method - None (no alignment), 'pca' (fast, approximate), or 'icp' (slower, more accurate)
+            alignment_method: Alignment method - None (no alignment), 'pca' (fast, approximate), 'icp' (slower, more accurate), or 'stem_based' (uses only stem points with sequential alignment and vertical correction)
             save_transformations: If True, save transformation matrices when applying alignment
             auto_download: If True, automatically download dataset if not found (default: True)
         """
@@ -350,20 +350,25 @@ class PlantSequencesDataset(Dataset):
 
     def align_plant_sequence(self, sequence_name, reference_idx=0, method=None):
         """
-        Align plant sequence using PCA or ICP registration, preserving scale differences.
-        Only removes rotation and translation to show growth over time.
+        Align plant sequence using PCA, ICP, or stem-based registration.
+        Preserves scale differences to show growth over time.
+        Only removes rotation and translation.
         Works with different numbers of points between timepoints.
         Ensures consistent orientation across all timepoints.
 
         Args:
             sequence_name: Name of the sequence to align
-            reference_idx: Index of reference timepoint (default: 0)
-            method: Alignment method - 'pca' or 'icp'. If None, uses self.alignment_method
+            reference_idx: Index of reference timepoint (default: 0, ignored for stem_based)
+            method: Alignment method - 'pca', 'icp', or 'stem_based'. If None, uses self.alignment_method
 
         Returns:
             List of aligned timepoint data and transformation matrices
         """
         method = method or self.alignment_method
+
+        # Stem-based alignment uses sequential approach
+        if method == "stem_based":
+            return self._align_stem_based(sequence_name)
 
         sequence_data = self.get_sequence_data(sequence_name)
         if len(sequence_data) < 2:
@@ -479,6 +484,96 @@ class PlantSequencesDataset(Dataset):
             )
 
         return aligned_sequence, transformations
+
+    def _align_stem_based(self, sequence_name):
+        """
+        Align plant sequence using stem-based ICP with vertical correction.
+
+        This is a two-stage sequential alignment approach:
+        - Stage 1: Stem-based ICP alignment (rotation + translation)
+        - Stage 2: Vertical shift correction using stem base centroid
+
+        Args:
+            sequence_name: Name of the sequence to align
+
+        Returns:
+            List of aligned timepoint data and transformation matrices
+        """
+        from plant_shape_analysis.alignment.stem_based_alignment import (
+            align_plant_sequence_stem_based,
+        )
+
+        sequence_data = self.get_sequence_data(sequence_name)
+        if len(sequence_data) < 2:
+            return sequence_data, []
+
+        # Run stem-based alignment
+        aligned_timepoints, transformations = align_plant_sequence_stem_based(
+            sequence_data,
+            use_rotation=True,
+            max_iterations=200,
+            vertical_correction=True,
+            base_height_mm=10,
+        )
+
+        # Transform dense points and leaf tips using the same transformations
+        aligned_sequence = []
+        for i, (aligned_tp, timepoint_data, trans_info) in enumerate(
+            zip(aligned_timepoints, sequence_data, transformations)
+        ):
+            # Get transformation parameters
+            rotation = trans_info["rotation"]
+            translation = trans_info["translation"]
+            vertical_shift = trans_info.get("vertical_shift", np.zeros(3))
+
+            # Start with aligned points from stem-based alignment
+            result_tp = timepoint_data.copy()
+            result_tp["points"] = aligned_tp["points"]
+
+            # Transform dense points if they exist
+            if timepoint_data["dense_points"] is not None:
+                dense_points = timepoint_data["dense_points"]
+
+                if i == 0:
+                    # Reference frame - no transformation
+                    aligned_dense_points = dense_points
+                else:
+                    # Apply same transformation as sparse points
+                    if trans_info.get("stage") == "stage2_vertical_correction":
+                        # Apply rotation, translation, and vertical shift
+                        aligned_dense_points = (
+                            dense_points @ rotation.T + translation + vertical_shift
+                        )
+                    else:
+                        # Apply rotation and translation only
+                        aligned_dense_points = dense_points @ rotation.T + translation
+
+                result_tp["dense_points"] = aligned_dense_points
+
+            # Note: leaf_tip_idxs remain the same (indices into aligned points)
+            # The aligned coordinates are automatically correct since points are aligned
+
+            aligned_sequence.append(result_tp)
+
+        # Format transformations to match other alignment methods
+        formatted_transformations = []
+        for trans_info in transformations:
+            formatted_transformations.append(
+                {
+                    "day": trans_info["day"],
+                    "rotation_matrix": trans_info["rotation"],
+                    "basis": trans_info["rotation"],
+                    "translation": trans_info["translation"],
+                    "vertical_shift": trans_info.get("vertical_shift", np.zeros(3)),
+                    "original_center": np.zeros(3),  # Not used in stem-based
+                    "reference_center": np.zeros(3),  # Not used in stem-based
+                    "is_reference": trans_info["is_reference"],
+                    "method": "stem_based",
+                    "stage": trans_info["stage"],
+                }
+            )
+
+        return aligned_sequence, formatted_transformations
 
     def _apply_alignment_to_dataset(self):
         """Apply alignment (PCA or ICP) to all plant sequences in the dataset."""
@@ -1013,7 +1108,7 @@ if __name__ == "__main__":
     plant_dataset = PlantSequencesDataset(
         dataset_path,
         version="v1",
-        alignment_method="icp",  # or 'pca' or None
+        alignment_method="stem_based",
         save_transformations=False,
         use_ply=True,
     )

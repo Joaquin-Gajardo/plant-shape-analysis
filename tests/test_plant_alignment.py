@@ -10,7 +10,7 @@ from plant_shape_analysis.vis.plot_functions import visualize_plant_sequence
 
 
 def main():
-    dataset_path = Path("data/TrackPlant3D/versions/v1")
+    dataset_path = Path("data/TrackPlant3D/versions")
     sequence_name = "maize_control_plant2"
     offscreen = True  # Set to True to run visualization in offscreen mode
 

@@ -177,7 +177,7 @@ def align_plant_pair_icp(
                 break
 
         # Compute incremental transformation using all correspondences
-        T, R_accum, t_accum = get_best_fit_transform(all_source_points, all_target_points)
+        _, R_accum, t_accum = get_best_fit_transform(all_source_points, all_target_points)
 
     # Final aligned points
     aligned_points1 = points1.T
