@@ -167,14 +167,17 @@ def save_aligned_sequence(results, sequence_name, output_dir, method_name="align
     return output_path
 
 
-def sequential_stem_alignment(timepoints, use_rotation=True, max_iterations=200):
+def stem_alignment(
+    timepoints, use_rotation=True, max_iterations=200, align_to_first=False
+):
     """
-    Sequentially align timepoints where each is aligned to the previous one.
+    Align timepoints using stem-based ICP.
 
     Args:
         timepoints: List of timepoint dictionaries
         use_rotation: Whether to use rotation
         max_iterations: Max ICP iterations
+        align_to_first: If True, align all to first frame. If False, sequential (to previous)
 
     Returns:
         results: List of alignment results
@@ -195,17 +198,23 @@ def sequential_stem_alignment(timepoints, use_rotation=True, max_iterations=200)
     )
 
     for i in range(1, len(timepoints)):
-        prev_tp = results[i - 1]
         curr_tp = timepoints[i]
 
-        print(f"\nAligning Day {curr_tp['day']} to Day {prev_tp['day']}")
+        if align_to_first:
+            # Align to first frame (reference-based)
+            target_tp = results[0]
+            print(f"\nAligning Day {curr_tp['day']} to Day {target_tp['day']} (reference)")
+        else:
+            # Align to previous frame (sequential)
+            target_tp = results[i - 1]
+            print(f"\nAligning Day {curr_tp['day']} to Day {target_tp['day']} (sequential)")
 
-        # Align current to previous (using previous aligned points)
+        # Align current to target (using target aligned points)
         trans, rot, error = stem_based_alignment(
             curr_tp["points"],
             curr_tp["labels"],
-            prev_tp["aligned_points"],
-            prev_tp["aligned_labels"],
+            target_tp["aligned_points"],
+            target_tp["aligned_labels"],
             use_rotation=use_rotation,
             max_iterations=max_iterations,
         )
@@ -257,28 +266,49 @@ def main():
     print(f"Number of timepoints: {len(timepoints)}")
     print(f"Days: {[tp['day'] for tp in timepoints]}")
 
-    # Sequential stem alignment with rotation
+    # Sequential stem alignment (align to previous)
     print("\n" + "=" * 80)
-    print("SEQUENTIAL STEM ALIGNMENT (rotation + translation)")
+    print("SEQUENTIAL STEM ALIGNMENT (to previous frame)")
     print("=" * 80)
 
-    results = sequential_stem_alignment(timepoints, use_rotation=True)
+    sequential_results = stem_alignment(
+        timepoints, use_rotation=True, align_to_first=False
+    )
+
+    # Reference-based stem alignment (align to first)
+    print("\n" + "=" * 80)
+    print("REFERENCE-BASED STEM ALIGNMENT (to first frame)")
+    print("=" * 80)
+
+    reference_results = stem_alignment(
+        timepoints, use_rotation=True, align_to_first=True
+    )
 
     # Save aligned sequences
     print("\n" + "=" * 80)
     print("SAVING ALIGNED SEQUENCES")
     print("=" * 80)
 
-    output_dir = save_aligned_sequence(
-        results,
+    print("\nSaving sequential alignment...")
+    output_dir1 = save_aligned_sequence(
+        sequential_results,
         sequence_name,
         output_dir="output/aligned_sequences",
         method_name="sequential_stem",
     )
 
+    print("\nSaving reference-based alignment...")
+    output_dir2 = save_aligned_sequence(
+        reference_results,
+        sequence_name,
+        output_dir="output/aligned_sequences",
+        method_name="reference_stem",
+    )
+
     print(f"\n{'='*80}")
     print("✓ Aligned sequences saved!")
-    print(f"  Output: {output_dir}")
+    print(f"  Sequential (to previous): {output_dir1}")
+    print(f"  Reference (to first): {output_dir2}")
     print(f"{'='*80}")
 
 
