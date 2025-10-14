@@ -248,7 +248,7 @@ def two_stage_alignment(
     use_rotation=True,
     max_iterations=200,
     align_to_first=False,
-    base_percentile=10,
+    base_height_mm=10,
 ):
     """
     Two-stage alignment:
@@ -260,7 +260,7 @@ def two_stage_alignment(
         use_rotation: Whether to use rotation in stage 1
         max_iterations: Max ICP iterations
         align_to_first: If True, align all to first frame. If False, sequential (to previous)
-        base_percentile: Use lowest X% of stem points for vertical correction (default: 10%)
+        base_height_mm: Height in mm from stem base to use for correction (default: 10mm)
 
     Returns:
         results: List of alignment results after both stages
@@ -276,7 +276,7 @@ def two_stage_alignment(
 
     # STAGE 2: Vertical shift correction
     print("\n" + "=" * 80)
-    print(f"STAGE 2: Vertical shift correction (lowest {base_percentile}% of stem)")
+    print(f"STAGE 2: Vertical shift correction (first {base_height_mm}mm of stem base)")
     print("=" * 80)
 
     stage2_results = []
@@ -309,33 +309,44 @@ def two_stage_alignment(
             stage2_results.append(curr_result.copy())
             continue
 
-        # Get lowest X% of stem points by Z coordinate
-        curr_z_threshold = np.percentile(curr_stem[:, 2], base_percentile)
-        target_z_threshold = np.percentile(target_stem[:, 2], base_percentile)
+        # Get first X mm of stem from the base (using 1% percentile to avoid outliers)
+        curr_min_z = np.percentile(curr_stem[:, 2], 1)
+        target_min_z = np.percentile(target_stem[:, 2], 1)
+
+        curr_z_threshold = curr_min_z + base_height_mm
+        target_z_threshold = target_min_z + base_height_mm
 
         curr_base = curr_stem[curr_stem[:, 2] <= curr_z_threshold]
         target_base = target_stem[target_stem[:, 2] <= target_z_threshold]
 
         print(
-            f"  Stem base points - Current: {len(curr_base)}, Target: {len(target_base)}"
+            f"  Stem base points - Current: {len(curr_base)} (Z: {curr_min_z:.2f} to {curr_z_threshold:.2f})"
         )
+        print(
+            f"                     Target: {len(target_base)} (Z: {target_min_z:.2f} to {target_z_threshold:.2f})"
+        )
+
+        if len(curr_base) < 5 or len(target_base) < 5:
+            print("  Warning: Too few base points, skipping vertical correction")
+            stage2_results.append(curr_result.copy())
+            continue
 
         # Compute centroids of stem base
         curr_base_centroid = np.mean(curr_base, axis=0)
         target_base_centroid = np.mean(target_base, axis=0)
 
-        # Compute Z-shift only
-        z_shift = target_base_centroid[2] - curr_base_centroid[2]
-        print(f"  Z-shift: {z_shift:.4f} mm")
+        # Compute shift
+        shift = target_base_centroid - curr_base_centroid
+        print(f"  Shift: {shift}")
+        print(f"  Z-shift: {shift[2]:.4f} mm")
 
-        # Apply Z-shift
-        z_correction = np.array([0, 0, z_shift])
-        aligned_points_stage2 = curr_result["aligned_points"] + z_correction
+        # Apply shift
+        aligned_points_stage2 = curr_result["aligned_points"] + shift
 
         stage2_results.append(
             {
                 "day": curr_result["day"],
-                "translation": z_correction,
+                "translation": shift,
                 "rotation": np.eye(3),
                 "error": 0.0,  # Not computed for stage 2
                 "aligned_points": aligned_points_stage2,
@@ -397,7 +408,7 @@ def main():
     print("=" * 80)
 
     two_stage_results = two_stage_alignment(
-        timepoints, use_rotation=True, align_to_first=False, base_percentile=10
+        timepoints, use_rotation=True, align_to_first=False, base_height_mm=10
     )
 
     # Save aligned sequences
@@ -426,7 +437,7 @@ def main():
         two_stage_results,
         sequence_name,
         output_dir="output/aligned_sequences",
-        method_name="two_stage_sequential",
+        method_name="two_stage_sequential_1cm_shift_robust",
     )
 
     print(f"\n{'='*80}")
