@@ -1006,7 +1006,7 @@ class LeafSequencesDataset(Dataset):
 
 if __name__ == "__main__":
 
-    dataset_path = Path("data/TrackPlant3D/versions/v1")
+    dataset_path = Path("data/TrackPlant3D/versions")
 
     # Example usage for PlantSequencesDataset with alignment
     print("Creating plant dataset with ICP alignment...")
