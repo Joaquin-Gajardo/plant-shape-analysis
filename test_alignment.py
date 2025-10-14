@@ -437,7 +437,7 @@ def main():
         two_stage_results,
         sequence_name,
         output_dir="output/aligned_sequences",
-        method_name="two_stage_sequential_1cm_shift_robust",
+        method_name="two_stage_sequential_1cm_shift_robust_with_chamfer",
     )
 
     print(f"\n{'='*80}")

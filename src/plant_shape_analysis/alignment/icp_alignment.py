@@ -81,6 +81,7 @@ def align_plant_pair_icp(
     convergence_threshold=0.01,
     initial_alignment="centroid",
     return_correspondences=False,
+    use_bidirectional=True,
 ):
     """
     Align two plant point clouds using Iterative Closest Point (ICP) registration.
@@ -95,6 +96,8 @@ def align_plant_pair_icp(
         convergence_threshold: Stop when cost change is below this (default: 0.01)
         initial_alignment: Initial alignment strategy - "centroid" or "identity"
         return_correspondences: If True, return final point correspondences
+        use_bidirectional: If True, use bidirectional correspondences (Chamfer distance)
+                          instead of unidirectional (default: True)
 
     Returns:
         If return_correspondences=False:
@@ -134,10 +137,38 @@ def align_plant_pair_icp(
         R_total = np.dot(R_accum, R_total)
         t_total = np.dot(R_accum, t_total) + t_accum
 
-        # Find nearest neighbors
-        distances, correspondences = get_nearest_neighbors(points1.T, points2.T)
-        cost = np.mean(distances)
-        costs.append(cost)
+        if use_bidirectional:
+            # Bidirectional correspondences (Chamfer distance minimization)
+            # Find nearest neighbors both ways
+            distances_1to2, indices_1to2 = get_nearest_neighbors(points1.T, points2.T)
+            distances_2to1, indices_2to1 = get_nearest_neighbors(points2.T, points1.T)
+
+            # Compute Chamfer distance (symmetric)
+            cost = (np.mean(distances_1to2) + np.mean(distances_2to1)) / 2
+            costs.append(cost)
+
+            # Create bidirectional correspondence pairs
+            # Source->Target: each source point to its nearest target
+            source_points_1to2 = points1.T  # (N, 3)
+            target_points_1to2 = points2.T[indices_1to2]  # (N, 3)
+
+            # Target->Source: each target point to its nearest source (reversed)
+            source_points_2to1 = points1.T[indices_2to1]  # (M, 3)
+            target_points_2to1 = points2.T  # (M, 3)
+
+            # Combine both sets of correspondences
+            all_source_points = np.vstack([source_points_1to2, source_points_2to1])
+            all_target_points = np.vstack([target_points_1to2, target_points_2to1])
+
+            correspondences = indices_1to2  # Keep for backward compatibility
+        else:
+            # Unidirectional correspondences (original ICP)
+            distances, correspondences = get_nearest_neighbors(points1.T, points2.T)
+            cost = np.mean(distances)
+            costs.append(cost)
+
+            all_source_points = points1.T
+            all_target_points = points2.T[correspondences]
 
         # Check convergence
         if iteration > 1:
@@ -145,8 +176,8 @@ def align_plant_pair_icp(
             if cost_change < convergence_threshold or costs[-1] > costs[-2] + 1e-4:
                 break
 
-        # Compute incremental transformation
-        T, R_accum, t_accum = get_best_fit_transform(points1.T, points2.T[correspondences])
+        # Compute incremental transformation using all correspondences
+        T, R_accum, t_accum = get_best_fit_transform(all_source_points, all_target_points)
 
     # Final aligned points
     aligned_points1 = points1.T
