@@ -12,7 +12,7 @@ from plant_shape_analysis.vis.plot_functions import visualize_plant_sequence
 def main():
     dataset_path = Path("data/TrackPlant3D/versions")
     sequence_name = "maize_control_plant2"
-    offscreen = True  # Set to True to run visualization in offscreen mode
+    offscreen = False  # Set to True to run visualization in offscreen mode
 
     # Test 1: PlantSequencesDataset without alignment
     print("=" * 60)
@@ -32,13 +32,13 @@ def main():
 
     # Test 2: PlantSequencesDataset with alignment
     print("=" * 60)
-    print("Test 2: Loading plant dataset WITH PCA alignment")
+    print("Test 2: Loading plant dataset WITH STEM-BASED alignment")
     print("=" * 60)
     plant_dataset_aligned = PlantSequencesDataset(
         dataset_path,
         save_transformations=False,
         use_ply=True,
-        alignment_method="icp",
+        alignment_method="stem_based",
     )
     print(f"Number of sequences: {len(plant_dataset_aligned)}")
 

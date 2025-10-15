@@ -6,6 +6,7 @@ Original file: registration/registration_icp.py
 
 This implementation provides point-to-point ICP registration for aligning
 plant point clouds across time, handling growth and topology changes.
+Note that the original implemented was designed to align skeletons.
 """
 
 import numpy as np
@@ -177,7 +178,9 @@ def align_plant_pair_icp(
                 break
 
         # Compute incremental transformation using all correspondences
-        _, R_accum, t_accum = get_best_fit_transform(all_source_points, all_target_points)
+        _, R_accum, t_accum = get_best_fit_transform(
+            all_source_points, all_target_points
+        )
 
     # Final aligned points
     aligned_points1 = points1.T
@@ -220,11 +223,13 @@ def align_sequence_pairwise_icp(
         if i == reference_idx:
             # Reference stays unchanged
             aligned_sequence.append(points)
-            transformations.append({
-                "rotation_matrix": np.eye(3),
-                "translation": np.zeros(3),
-                "is_reference": True,
-            })
+            transformations.append(
+                {
+                    "rotation_matrix": np.eye(3),
+                    "translation": np.zeros(3),
+                    "is_reference": True,
+                }
+            )
         else:
             # Align to reference
             aligned_points, R, t = align_plant_pair_icp(
@@ -234,10 +239,12 @@ def align_sequence_pairwise_icp(
                 convergence_threshold=convergence_threshold,
             )
             aligned_sequence.append(aligned_points)
-            transformations.append({
-                "rotation_matrix": R,
-                "translation": t,
-                "is_reference": False,
-            })
+            transformations.append(
+                {
+                    "rotation_matrix": R,
+                    "translation": t,
+                    "is_reference": False,
+                }
+            )
 
     return aligned_sequence, transformations
