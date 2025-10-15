@@ -30,6 +30,7 @@ class PlantSequencesDataset(Dataset):
         use_ply=False,
         alignment_method=None,
         save_transformations=False,
+        estimate_normals=False,
         auto_download=True,
     ):
         """
@@ -41,6 +42,7 @@ class PlantSequencesDataset(Dataset):
             use_ply: If True, load from PLY files instead of TXT files. Keeping both options for compatibility to original dataset format.
             alignment_method: Alignment method - None (no alignment), 'pca' (fast, approximate), 'icp' (slower, more accurate), or 'stem_based' (uses only stem points with sequential alignment and vertical correction)
             save_transformations: If True, save transformation matrices when applying alignment
+            estimate_normals: If True, estimate normals for all plant point clouds
             auto_download: If True, automatically download dataset if not found (default: True)
         """
         # Validate version and get config
@@ -58,21 +60,27 @@ class PlantSequencesDataset(Dataset):
         self.version = version
 
         # Auto-download if version directory doesn't exist
-        if auto_download and not self.dataset_path.exists():
-            from plant_shape_analysis.utils.download_dataset import (
-                download_trackplant3d,
-            )
+        if not self.dataset_path.exists():
+            if auto_download:
+                from plant_shape_analysis.utils.download_dataset import (
+                    download_trackplant3d,
+                )
 
-            print(f"Dataset not found at {self.dataset_path}")
-            print("Attempting to download...")
-            self.dataset_path = download_trackplant3d(
-                target_dir=dataset_path, version=version, verbose=True
-            )
+                print(f"Dataset not found at {self.dataset_path}")
+                print("Attempting to download...")
+                self.dataset_path = download_trackplant3d(
+                    target_dir=dataset_path, version=version, verbose=True
+                )
+            else:
+                raise FileNotFoundError(
+                    f'Dataset not found in "{str(self.dataset_path.resolve())}" and auto-download is disabled.'
+                )
 
         self.use_ply = use_ply
         self.file_extension = "*.ply" if use_ply else "*.txt"
         self.alignment_method = alignment_method
         self._save_transformations = save_transformations
+        self.estimate_normals = estimate_normals
 
         # Set paths from config
         self.sparse_path = self.dataset_path / data_dirs["sparse"]
@@ -97,6 +105,10 @@ class PlantSequencesDataset(Dataset):
                 f"Applying {self.alignment_method.upper()} alignment to {len(self.plant_timeseries)} plant sequences..."
             )
             self._apply_alignment_to_dataset()
+
+        # Estimate normals if requested
+        if self.estimate_normals:
+            self._estimate_normals()
 
     def _organize_sequences(self):
         """Organize files into sequences based on crop type, treatment, and plant number"""
@@ -611,6 +623,25 @@ class PlantSequencesDataset(Dataset):
             f"{self.alignment_method.upper()} alignment complete. {sum(1 for ts in self.plant_timeseries if ts['is_aligned'])} sequences aligned."
         )
 
+    def _estimate_normals(self):
+        """Estimate normals for all plants in the dataset."""
+        # NOTE: these are only estimated for sparse points, as dense points is takes a long time
+        print("Estimating normals for all sparse plants in the dataset...")
+        for plant_ts in self.plant_timeseries:
+            for timepoint in plant_ts["timepoints"]:
+                # Estimate normals for sparse points
+                points = timepoint["points"]
+                if points is not None and len(points) > 0:
+                    # Estimate normals using Open3D
+                    pcd = o3d.geometry.PointCloud()
+                    pcd.points = o3d.utility.Vector3dVector(points)
+                    pcd.estimate_normals()
+                    pcd.orient_normals_to_align_with_direction()
+                    pcd.orient_normals_consistent_tangent_plane(k=30)
+                    normals = np.asarray(pcd.normals)
+                    timepoint["normals"] = normals
+        print("Normal estimation complete.")
+
     def save_transformations(
         self, sequence_name, transformations, save_dir="transformations"
     ):
@@ -806,7 +837,7 @@ class LeafSequencesDataset(Dataset):
         for leaf in self.leaf_timeseries:
             for timepoint in leaf["timepoints"]:
                 points = timepoint["points"]
-                if points is not None:
+                if points is not None and len(points) > 0:
                     # Estimate normals using Open3D
                     pcd = o3d.geometry.PointCloud()
                     pcd.points = o3d.utility.Vector3dVector(points)
@@ -814,7 +845,8 @@ class LeafSequencesDataset(Dataset):
                     pcd.orient_normals_to_align_with_direction()
                     pcd.orient_normals_consistent_tangent_plane(k=30)
                     normals = np.asarray(pcd.normals)
-                    timepoint["points"] = np.hstack([timepoint["points"], normals])
+                    timepoint["normals"] = normals
+        print("Normal estimation complete.")
 
     def _apply_pca_alignment_to_dataset(self):
         """Apply PCA alignment to all leaf sequences in the dataset."""
@@ -1104,11 +1136,12 @@ if __name__ == "__main__":
     dataset_path = Path("data/TrackPlant3D/versions")
 
     # Example usage for PlantSequencesDataset with alignment
-    print("Creating plant dataset with ICP alignment...")
+    print("Creating plant dataset...")
     plant_dataset = PlantSequencesDataset(
         dataset_path,
         version="v1",
         alignment_method="stem_based",
+        estimate_normals=True,
         save_transformations=False,
         use_ply=True,
     )
