@@ -167,6 +167,7 @@ def visualize_leaf_sequence(
     show_leaf_tips: bool = True,
     show_connections: bool = True,
     dense_points: bool = False,
+    view_from_side: bool = True,
     window_name: str = "Leaf Growth Sequence",
 ):
     """
@@ -178,7 +179,8 @@ def visualize_leaf_sequence(
         spacing: Distance between timepoints in the visualization
         show_leaf_tips: Whether to highlight leaf tips as red spheres
         show_connections: Whether to show connections between corresponding points
-        connection_samples: Number of connection lines to draw between timepoints
+        dense_points: Whether to use dense point clouds if available
+        view_from_side: If True, rotate scene 90° to view leaves from the side
         window_name: Name for the visualization window
     """
     timepoints = leaf_timeseries["timepoints"]
@@ -333,11 +335,35 @@ def visualize_leaf_sequence(
         line_set = create_correspondence_lines(leaf_tip_positions)
         geometries.append(line_set) if line_set is not None else None
 
-    # Visualize all geometries
-    o3d.visualization.draw_geometries(
-        geometries,
-        window_name=f"{window_name} - {leaf_timeseries['sequence_name']} Leaf {leaf_timeseries['leaf_id']}",
+    # Add coordinate frame for orientation
+    coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
+        size=10.0, origin=[0, 0, 0]
     )
+    geometries.append(coord_frame)
+
+    # Visualize all geometries with custom camera if needed
+    if view_from_side:
+        # Use custom visualizer to set camera view from the side
+        vis = o3d.visualization.Visualizer()
+        vis.create_window(
+            window_name=f"{window_name} - {leaf_timeseries['sequence_name']} Leaf {leaf_timeseries['leaf_id']}"
+        )
+        for geom in geometries:
+            vis.add_geometry(geom)
+
+        # Set camera to view from X axis (side view)
+        ctr = vis.get_view_control()
+        ctr.set_front([1, 0, 0])  # Camera looking from positive X
+        ctr.set_lookat([0, 0, 0])  # Looking at origin
+        ctr.set_up([0, 0, 1])  # Z is up
+
+        vis.run()
+        vis.destroy_window()
+    else:
+        o3d.visualization.draw_geometries(
+            geometries,
+            window_name=f"{window_name} - {leaf_timeseries['sequence_name']} Leaf {leaf_timeseries['leaf_id']}",
+        )
 
 
 def visualize_plant_sequence(
@@ -347,6 +373,7 @@ def visualize_plant_sequence(
     show_connections: bool = False,
     dense_points: bool = False,
     color_by_organ: bool = True,
+    view_from_side: bool = True,
     window_name: str = "Plant Growth Sequence",
     offscreen: bool = False,
 ):
@@ -362,6 +389,7 @@ def visualize_plant_sequence(
         show_connections: Whether to show connections between leaf tips across time
         dense_points: Whether to use dense point clouds if available
         color_by_organ: If True, color by organ labels. If False, color by timepoint
+        view_from_side: If True, rotate scene 90° to view plants from the side
         window_name: Name for the visualization window
         offscreen: If True, run visualization in offscreen mode (no GUI and save image)
     """
@@ -519,6 +547,12 @@ def visualize_plant_sequence(
                 if line_set is not None:
                     geometries.append(line_set)
 
+    # Add coordinate frame for orientation
+    coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
+        size=20.0, origin=[0, 0, 0]
+    )
+    geometries.append(coord_frame)
+
     # Get sequence name if available
     if isinstance(plant_sequence_data, dict):
         sequence_info = plant_sequence_data.get("sequence_name", "Unknown")
@@ -533,6 +567,23 @@ def visualize_plant_sequence(
             geometries,
             output_path=f"{window_name} - {sequence_info}{alignment_status}.png",
         )
+    elif view_from_side:
+        # Use custom visualizer to set camera view from the side
+        vis = o3d.visualization.Visualizer()
+        vis.create_window(
+            window_name=f"{window_name} - {sequence_info}{alignment_status}"
+        )
+        for geom in geometries:
+            vis.add_geometry(geom)
+
+        # Set camera to view from X axis (side view)
+        ctr = vis.get_view_control()
+        ctr.set_front([1, 0, 0])  # Camera looking from positive X
+        ctr.set_lookat([0, 0, 0])  # Looking at origin
+        ctr.set_up([0, 0, 1])  # Z is up
+
+        vis.run()
+        vis.destroy_window()
     else:
         o3d.visualization.draw_geometries(
             geometries,
