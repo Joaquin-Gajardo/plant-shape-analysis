@@ -198,6 +198,8 @@ def visualize_leaf_sequence(
 
     # Process each timepoint
     points_key = "dense_points" if dense_points else "points"
+    normals_key = "dense_normals" if dense_points else "normals"
+
     for i, timepoint in enumerate(timepoints):
         points = timepoint[points_key]
         day = timepoint["day"]
@@ -216,6 +218,11 @@ def visualize_leaf_sequence(
         translated_points[:, 1] += i * spacing
 
         pcd.points = o3d.utility.Vector3dVector(translated_points)
+
+        # Add normals if available
+        normals = timepoint.get(normals_key)
+        if normals is not None:
+            pcd.normals = o3d.utility.Vector3dVector(normals)
 
         # Color the point cloud
         point_colors = np.tile(colors[i], (len(points), 1))
@@ -400,6 +407,7 @@ def visualize_plant_sequence(
     # Process each timepoint
     points_key = "dense_points" if dense_points else "points"
     labels_key = "dense_labels" if dense_points else "labels"
+    normals_key = "dense_normals" if dense_points else "normals"
 
     for i, timepoint in enumerate(timepoints):
         points = timepoint.get(points_key)
@@ -419,6 +427,11 @@ def visualize_plant_sequence(
         translated_points[:, 1] += i * spacing
 
         pcd.points = o3d.utility.Vector3dVector(translated_points)
+
+        # Add normals if available
+        normals = timepoint.get(normals_key)
+        if normals is not None:
+            pcd.normals = o3d.utility.Vector3dVector(normals)
 
         # Color the point cloud
         if color_by_organ and labels is not None:
