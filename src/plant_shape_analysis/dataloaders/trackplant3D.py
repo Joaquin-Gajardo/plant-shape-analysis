@@ -256,10 +256,29 @@ class PlantSequencesDataset(Dataset):
 
             return global_indices, coordinates
 
+    def _needs_orientation_correction(self, sequence_name):
+        """Check if sequence needs Y->Z orientation correction"""
+        # Sorghum, tobacco, and tomato1 have Y as up instead of Z
+        crops_to_correct = ["sorghum", "tobacco", "tomato1"]
+        return any(sequence_name.startswith(crop) for crop in crops_to_correct)
+
+    def _correct_orientation(self, points, normals=None):
+        """Apply 90° rotation around X axis to make Z up instead of Y"""
+        # Rotation matrix for 90° around X: Y -> Z, Z -> -Y, X -> X
+        R = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]], dtype=np.float64)
+
+        rotated_points = points @ R.T
+        rotated_normals = None
+        if normals is not None:
+            rotated_normals = normals @ R.T
+
+        return rotated_points, rotated_normals
+
     def get_sequence_data(self, sequence_name):
         """Get all point clouds and leaf tips for a sequence"""
         files = self._get_sequence(sequence_name)
         sequence_data = []
+        needs_correction = self._needs_orientation_correction(sequence_name)
 
         for file_path in files:
             # Extract day from filename
@@ -274,6 +293,18 @@ class PlantSequencesDataset(Dataset):
 
             # Load leaf tips if available
             leaf_tip_idxs, leaf_tip_coordinates = self.load_leaf_tips(file_path)
+
+            # Apply orientation correction if needed (before validation)
+            if needs_correction:
+                points, _ = self._correct_orientation(points)
+                if dense_points is not None:
+                    dense_points, _ = self._correct_orientation(dense_points)
+                if leaf_tip_coordinates.size > 0:
+                    leaf_tip_coordinates, _ = self._correct_orientation(
+                        leaf_tip_coordinates
+                    )
+
+            # Validate leaf tips after orientation correction
             if leaf_tip_idxs.size > 0:
                 # Check if leaf tip coordinates match (with tolerance for floating point)
                 try:
