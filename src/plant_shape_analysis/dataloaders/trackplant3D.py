@@ -717,9 +717,11 @@ class LeafSequencesDataset(Dataset):
         min_timepoints: int = 3,
         max_timepoints: Optional[int] = None,
         alignment_method: Optional[str] = None,
-        save_transformations: bool = False,
+        plant_alignment_method: Optional[str] = None,
         estimate_normals: bool = False,
+        estimate_plant_normals: bool = False,
         use_ply: bool = False,
+        save_transformations: bool = False,
         auto_download: bool = True,
     ):
         """
@@ -731,18 +733,26 @@ class LeafSequencesDataset(Dataset):
             min_timepoints: Minimum number of timepoints for a leaf sequence
             max_timepoints: Maximum number of timepoints (None = no limit)
             alignment_method: Alignment method - None (no alignment) or 'pca' (PCA alignment)
-            save_transformations: If True, save transformation matrices when applying alignment
+            plant_alignment_method: Alignment method for plants when tracking leaves
             estimate_normals: If True, estimate normals for all leaves
+            estimate_plant_normals: If True, estimate normals for plants before tracking leaves
             use_ply: If True, load from PLY files instead of TXT files
+            save_transformations: If True, save transformation matrices when applying alignment
             auto_download: If True, automatically download dataset if not found (default: True)
         """
         self.plant_dataset = PlantSequencesDataset(
-            dataset_path, version=version, use_ply=use_ply, auto_download=auto_download
+            dataset_path,
+            version=version,
+            use_ply=use_ply,
+            alignment_method=plant_alignment_method,
+            estimate_normals=estimate_plant_normals,
+            auto_download=auto_download,
         )
         self.dataset_path = Path(dataset_path)
         self.min_timepoints = min_timepoints
         self.max_timepoints = max_timepoints
         self.alignment_method = alignment_method
+        self.plant_alignment_method = plant_alignment_method
         self._save_transformations = save_transformations
         self.estimate_normals = estimate_normals
 
@@ -783,8 +793,11 @@ class LeafSequencesDataset(Dataset):
         """Build individual leaf timeseries from plant sequences"""
         leaf_timeseries = []
 
-        for sequence_name in self.plant_dataset.get_sequence_names():
-            sequence_data = self.plant_dataset.get_sequence_data(sequence_name)
+        # Iterate through plant_timeseries directly instead of reloading from files
+        # This ensures we use the data with normals if they were estimated
+        for plant_ts in self.plant_dataset.plant_timeseries:
+            sequence_name = plant_ts["sequence_name"]
+            sequence_data = plant_ts["timepoints"]  # Use already-loaded data with normals!
 
             # Track leaves across time points
             leaf_tracks = self._track_leaves_across_time(sequence_data)
@@ -820,6 +833,7 @@ class LeafSequencesDataset(Dataset):
             dense_points = timepoint_data["dense_points"]
             dense_labels = timepoint_data["dense_labels"]
             leaf_tip_idxs = timepoint_data["leaf_tip_idxs"]
+            normals = timepoint_data.get("normals", None)  # Extract normals if available
 
             # Get unique leaf labels (excluding stem label 0)
             unique_leaves = np.unique(labels[labels > 0])
@@ -828,6 +842,11 @@ class LeafSequencesDataset(Dataset):
                 # Extract points for this leaf
                 leaf_mask = labels == leaf_label
                 leaf_points = points[leaf_mask]
+
+                # Extract normals for this leaf if available
+                leaf_normals = None
+                if normals is not None:
+                    leaf_normals = normals[leaf_mask]
 
                 # Extract dense points for this leaf if available
                 dense_leaf_points = None
@@ -851,6 +870,7 @@ class LeafSequencesDataset(Dataset):
                         "day": day,
                         "leaf_id": int(leaf_label),
                         "points": leaf_points,
+                        "normals": leaf_normals,  # Include normals
                         "dense_points": dense_leaf_points,
                         "leaf_tip": leaf_tip_coords,
                         "file_path": timepoint_data["file_path"],
