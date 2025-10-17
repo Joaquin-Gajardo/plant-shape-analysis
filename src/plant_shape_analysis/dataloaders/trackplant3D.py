@@ -745,9 +745,17 @@ class PlantSequencesDataset(Dataset):
                 # Compute dot product between current and reference normals
                 dot_products = np.sum(curr_organ_normals * matched_ref_normals, axis=1)
 
-                # Flip normals where dot product is negative
-                flip_mask = dot_products < 0
-                curr_organ_normals[flip_mask] = -curr_organ_normals[flip_mask]
+                # Use majority voting: if most normals point in wrong direction, flip ALL
+                # Only consider points with close matches (within reasonable distance)
+                max_distance = np.percentile(distances, 75)  # Use 75th percentile as threshold
+                reliable_matches = distances < max_distance
+
+                if np.any(reliable_matches):
+                    avg_dot_product = np.mean(dot_products[reliable_matches])
+
+                    # If average dot product is negative, flip ALL normals for this organ
+                    if avg_dot_product < 0:
+                        curr_organ_normals = -curr_organ_normals
 
                 # Update normals in the full array
                 curr_normals[curr_organ_mask] = curr_organ_normals
@@ -1030,9 +1038,17 @@ class LeafSequencesDataset(Dataset):
             # Compute dot product between current and reference normals
             dot_products = np.sum(curr_normals * matched_ref_normals, axis=1)
 
-            # Flip normals where dot product is negative (pointing opposite direction)
-            flip_mask = dot_products < 0
-            curr_normals[flip_mask] = -curr_normals[flip_mask]
+            # Use majority voting: if most normals point in wrong direction, flip ALL
+            # Only consider points with close matches (within reasonable distance)
+            max_distance = np.percentile(distances, 75)  # Use 75th percentile as threshold
+            reliable_matches = distances < max_distance
+
+            if np.any(reliable_matches):
+                avg_dot_product = np.mean(dot_products[reliable_matches])
+
+                # If average dot product is negative, flip ALL normals
+                if avg_dot_product < 0:
+                    curr_normals = -curr_normals
 
             # Update normals in timepoint
             tp["normals"] = curr_normals
