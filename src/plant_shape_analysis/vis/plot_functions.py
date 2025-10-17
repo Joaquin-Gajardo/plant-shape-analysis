@@ -7,6 +7,10 @@ import open3d as o3d
 import pymeshlab
 import torch
 
+from plant_shape_analysis.data_preprocessing.detect_leaf_tips_trackplant3D import (
+    COLOR_MAP,
+)
+
 
 def visualize_pymeshlab_mesh(
     ms: pymeshlab.MeshSet, window_name: str = "Mesh Visualization"
@@ -167,7 +171,7 @@ def visualize_leaf_sequence(
     show_leaf_tips: bool = True,
     show_connections: bool = True,
     dense_points: bool = False,
-    view_from_side: bool = True,
+    normals_scale: float = 0.5,
     window_name: str = "Leaf Growth Sequence",
 ):
     """
@@ -225,6 +229,11 @@ def visualize_leaf_sequence(
         normals = timepoint.get(normals_key)
         if normals is not None:
             pcd.normals = o3d.utility.Vector3dVector(normals)
+
+        # Apply normals scale for visualization
+        pcd.normals = o3d.utility.Vector3dVector(
+            [n * normals_scale for n in pcd.normals]
+        )
 
         # Color the point cloud
         point_colors = np.tile(colors[i], (len(points), 1))
@@ -342,28 +351,14 @@ def visualize_leaf_sequence(
     geometries.append(coord_frame)
 
     # Visualize all geometries with custom camera if needed
-    if view_from_side:
-        # Use custom visualizer to set camera view from the side
-        vis = o3d.visualization.Visualizer()
-        vis.create_window(
-            window_name=f"{window_name} - {leaf_timeseries['sequence_name']} Leaf {leaf_timeseries['leaf_id']}"
-        )
-        for geom in geometries:
-            vis.add_geometry(geom)
-
-        # Set camera to view from X axis (side view)
-        ctr = vis.get_view_control()
-        ctr.set_front([1, 0, 0])  # Camera looking from positive X
-        ctr.set_lookat([0, 0, 0])  # Looking at origin
-        ctr.set_up([0, 0, 1])  # Z is up
-
-        vis.run()
-        vis.destroy_window()
-    else:
-        o3d.visualization.draw_geometries(
-            geometries,
-            window_name=f"{window_name} - {leaf_timeseries['sequence_name']} Leaf {leaf_timeseries['leaf_id']}",
-        )
+    o3d.visualization.draw_geometries(
+        geometries,
+        window_name=f"{window_name} - {leaf_timeseries['sequence_name']} Leaf {leaf_timeseries['leaf_id']}",
+        point_show_normal=True,
+        up=[0, 0, 1],
+        front=[1, 0, 0],
+        lookat=[0, 0, 0],
+    )
 
 
 def visualize_plant_sequence(
@@ -373,7 +368,7 @@ def visualize_plant_sequence(
     show_connections: bool = False,
     dense_points: bool = False,
     color_by_organ: bool = True,
-    view_from_side: bool = True,
+    normals_scale: float = 0.5,
     window_name: str = "Plant Growth Sequence",
     offscreen: bool = False,
 ):
@@ -420,14 +415,15 @@ def visualize_plant_sequence(
     ]
 
     # Define colors for different organ types
-    organ_colors = {
-        0: np.array([0.6, 0.4, 0.2]),  # Stem - brown
-        1: np.array([0.2, 0.8, 0.2]),  # Leaf 1 - green
-        2: np.array([0.3, 0.9, 0.3]),  # Leaf 2 - lighter green
-        3: np.array([0.4, 0.85, 0.4]),  # Leaf 3
-        4: np.array([0.5, 0.9, 0.5]),  # Leaf 4
-        5: np.array([0.25, 0.95, 0.25]),  # Leaf 5
-    }
+    # organ_colors = {
+    #     0: np.array([0.6, 0.4, 0.2]),  # Stem - brown
+    #     1: np.array([0.2, 0.8, 0.2]),  # Leaf 1 - green
+    #     2: np.array([0.3, 0.9, 0.3]),  # Leaf 2 - lighter green
+    #     3: np.array([0.4, 0.85, 0.4]),  # Leaf 3
+    #     4: np.array([0.5, 0.9, 0.5]),  # Leaf 4
+    #     5: np.array([0.25, 0.95, 0.25]),  # Leaf 5
+    # }
+    organ_colors = COLOR_MAP
 
     geometries = []
     all_leaf_tips = []  # Track all leaf tips across timepoints for connections
@@ -460,6 +456,11 @@ def visualize_plant_sequence(
         normals = timepoint.get(normals_key)
         if normals is not None:
             pcd.normals = o3d.utility.Vector3dVector(normals)
+
+        # Apply normals scale for visualization
+        pcd.normals = o3d.utility.Vector3dVector(
+            [n * normals_scale for n in pcd.normals]
+        )
 
         # Color the point cloud
         if color_by_organ and labels is not None:
@@ -567,27 +568,14 @@ def visualize_plant_sequence(
             geometries,
             output_path=f"{window_name} - {sequence_info}{alignment_status}.png",
         )
-    elif view_from_side:
-        # Use custom visualizer to set camera view from the side
-        vis = o3d.visualization.Visualizer()
-        vis.create_window(
-            window_name=f"{window_name} - {sequence_info}{alignment_status}"
-        )
-        for geom in geometries:
-            vis.add_geometry(geom)
-
-        # Set camera to view from X axis (side view)
-        ctr = vis.get_view_control()
-        ctr.set_front([1, 0, 0])  # Camera looking from positive X
-        ctr.set_lookat([0, 0, 0])  # Looking at origin
-        ctr.set_up([0, 0, 1])  # Z is up
-
-        vis.run()
-        vis.destroy_window()
     else:
         o3d.visualization.draw_geometries(
             geometries,
             window_name=f"{window_name} - {sequence_info}{alignment_status}",
+            point_show_normal=True,
+            up=[0, 0, 1],
+            front=[1, 0, 0],
+            lookat=[0, 0, 0],
         )
 
 
