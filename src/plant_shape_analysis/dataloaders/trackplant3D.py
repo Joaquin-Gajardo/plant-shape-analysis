@@ -679,39 +679,39 @@ class PlantSequencesDataset(Dataset):
     def _enforce_temporal_normal_consistency_plant(self, timepoints, reference_idx=0):
         """
         Enforce temporal consistency of normals across timepoints for a plant sequence.
+        Uses sequential propagation: compares each timepoint to the previous one.
         Processes each leaf (organ label) separately to ensure normals remain consistent
         on the same face of each leaf over time.
 
         Args:
             timepoints: List of timepoint dictionaries containing 'points', 'labels', and 'normals'
-            reference_idx: Index of reference timepoint (default: 0)
+            reference_idx: Index of reference timepoint (default: 0, not used in sequential mode)
         """
         if len(timepoints) < 2:
             return
 
-        # Reference timepoint
-        ref_tp = timepoints[reference_idx]
-        if "normals" not in ref_tp or ref_tp["normals"] is None:
+        # Check if first timepoint has normals
+        if "normals" not in timepoints[0] or timepoints[0]["normals"] is None:
             return
 
-        ref_points = ref_tp["points"]
-        ref_labels = ref_tp["labels"]
-        ref_normals = ref_tp["normals"]
+        # Sequential propagation: compare each timepoint to the previous one
+        for i in range(1, len(timepoints)):
+            prev_tp = timepoints[i - 1]  # Previous timepoint as reference
+            curr_tp = timepoints[i]
 
-        # Get unique organ labels (excluding stem label 0 if desired, but include all for now)
-        unique_labels = np.unique(ref_labels)
-
-        # Process each subsequent timepoint
-        for i, tp in enumerate(timepoints):
-            if i == reference_idx:
+            if "normals" not in curr_tp or curr_tp["normals"] is None:
                 continue
 
-            if "normals" not in tp or tp["normals"] is None:
-                continue
+            prev_points = prev_tp["points"]
+            prev_labels = prev_tp["labels"]
+            prev_normals = prev_tp["normals"]
 
-            curr_points = tp["points"]
-            curr_labels = tp["labels"]
-            curr_normals = tp["normals"]
+            curr_points = curr_tp["points"]
+            curr_labels = curr_tp["labels"]
+            curr_normals = curr_tp["normals"]
+
+            # Get unique organ labels from current timepoint
+            unique_labels = np.unique(curr_labels)
 
             # Process each organ separately
             for organ_label in unique_labels:
@@ -720,30 +720,30 @@ class PlantSequencesDataset(Dataset):
                 if not np.any(curr_organ_mask):
                     continue
 
-                # Skip if organ doesn't exist in reference
-                ref_organ_mask = ref_labels == organ_label
-                if not np.any(ref_organ_mask):
+                # Skip if organ doesn't exist in previous timepoint
+                prev_organ_mask = prev_labels == organ_label
+                if not np.any(prev_organ_mask):
                     continue
 
                 # Get points and normals for this organ
                 curr_organ_points = curr_points[curr_organ_mask]
                 curr_organ_normals = curr_normals[curr_organ_mask]
-                ref_organ_points = ref_points[ref_organ_mask]
-                ref_organ_normals = ref_normals[ref_organ_mask]
+                prev_organ_points = prev_points[prev_organ_mask]
+                prev_organ_normals = prev_normals[prev_organ_mask]
 
-                # Build KD-tree for reference organ points
+                # Build KD-tree for previous organ points
                 from scipy.spatial import cKDTree
 
-                ref_tree = cKDTree(ref_organ_points)
+                prev_tree = cKDTree(prev_organ_points)
 
-                # Find nearest neighbors in reference frame
-                distances, indices = ref_tree.query(curr_organ_points, k=1)
+                # Find nearest neighbors in previous frame
+                distances, indices = prev_tree.query(curr_organ_points, k=1)
 
                 # For each point, check if normal should be flipped
-                matched_ref_normals = ref_organ_normals[indices]
+                matched_prev_normals = prev_organ_normals[indices]
 
-                # Compute dot product between current and reference normals
-                dot_products = np.sum(curr_organ_normals * matched_ref_normals, axis=1)
+                # Compute dot product between current and previous normals
+                dot_products = np.sum(curr_organ_normals * matched_prev_normals, axis=1)
 
                 # Use majority voting: if most normals point in wrong direction, flip ALL
                 # Only consider points with close matches (within reasonable distance)
@@ -761,7 +761,7 @@ class PlantSequencesDataset(Dataset):
                 curr_normals[curr_organ_mask] = curr_organ_normals
 
             # Update normals in timepoint
-            tp["normals"] = curr_normals
+            curr_tp["normals"] = curr_normals
 
     def save_transformations(
         self, sequence_name, transformations, save_dir="transformations"
@@ -995,48 +995,47 @@ class LeafSequencesDataset(Dataset):
     def _enforce_temporal_normal_consistency(self, timepoints, reference_idx=0):
         """
         Enforce temporal consistency of normals across timepoints for a leaf sequence.
-        Uses nearest neighbor matching to ensure normals point in the same direction over time.
+        Uses sequential propagation: compares each timepoint to the previous one.
+        This ensures normals point in the same direction over time.
 
         Args:
             timepoints: List of timepoint dictionaries containing 'points' and 'normals'
-            reference_idx: Index of reference timepoint (default: 0)
+            reference_idx: Index of reference timepoint (default: 0, not used in sequential mode)
         """
         if len(timepoints) < 2:
             return
 
-        # Reference timepoint normals
-        ref_tp = timepoints[reference_idx]
-        if "normals" not in ref_tp or ref_tp["normals"] is None:
+        # Check if first timepoint has normals
+        if "normals" not in timepoints[0] or timepoints[0]["normals"] is None:
             return
 
-        ref_points = ref_tp["points"]
-        ref_normals = ref_tp["normals"]
-
-        # Build KD-tree for reference points
+        # Sequential propagation: compare each timepoint to the previous one
         from scipy.spatial import cKDTree
 
-        ref_tree = cKDTree(ref_points)
+        for i in range(1, len(timepoints)):
+            prev_tp = timepoints[i - 1]  # Previous timepoint as reference
+            curr_tp = timepoints[i]
 
-        # Process each subsequent timepoint
-        for i, tp in enumerate(timepoints):
-            if i == reference_idx:
+            if "normals" not in curr_tp or curr_tp["normals"] is None:
                 continue
 
-            if "normals" not in tp or tp["normals"] is None:
-                continue
+            prev_points = prev_tp["points"]
+            prev_normals = prev_tp["normals"]
 
-            curr_points = tp["points"]
-            curr_normals = tp["normals"]
+            curr_points = curr_tp["points"]
+            curr_normals = curr_tp["normals"]
 
-            # Find nearest neighbors in reference frame
-            distances, indices = ref_tree.query(curr_points, k=1)
+            # Build KD-tree for previous points
+            prev_tree = cKDTree(prev_points)
+
+            # Find nearest neighbors in previous frame
+            distances, indices = prev_tree.query(curr_points, k=1)
 
             # For each point, check if normal should be flipped
-            # by comparing with nearest neighbor's normal in reference
-            matched_ref_normals = ref_normals[indices]
+            matched_prev_normals = prev_normals[indices]
 
-            # Compute dot product between current and reference normals
-            dot_products = np.sum(curr_normals * matched_ref_normals, axis=1)
+            # Compute dot product between current and previous normals
+            dot_products = np.sum(curr_normals * matched_prev_normals, axis=1)
 
             # Use majority voting: if most normals point in wrong direction, flip ALL
             # Only consider points with close matches (within reasonable distance)
@@ -1051,7 +1050,7 @@ class LeafSequencesDataset(Dataset):
                     curr_normals = -curr_normals
 
             # Update normals in timepoint
-            tp["normals"] = curr_normals
+            curr_tp["normals"] = curr_normals
 
     def _apply_pca_alignment_to_dataset(self):
         """Apply PCA alignment to all leaf sequences in the dataset."""
