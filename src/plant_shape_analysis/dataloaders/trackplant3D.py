@@ -1136,7 +1136,7 @@ class LeafSequencesDataset(Dataset):
 
         Multi-stage approach:
         0. Pre-align rotation using leaf tips (on original unaligned data)
-           - Uses leaf tip direction to roughly align Z-rotation before other processing
+           - Uses leaf tip direction to roughly align Y-rotation before other processing
            - Critical for decaying/problematic leaves where normals might not be reliable
         1. Fix temporal normal consistency (on pre-aligned data)
            - Uses sequential propagation with nearest neighbor matching
@@ -1144,7 +1144,10 @@ class LeafSequencesDataset(Dataset):
         2. Apply PCA alignment with orientation corrections (using corrected normals)
            - Sequential alignment: each timepoint aligned to previous one
            - Z-axis rotation: computes optimal angle based on normal directions
-        3. Vertical alignment to z=0 plane
+        3. Align main PCA axis to Z-axis
+           - Rotates each leaf so its main axis is parallel to Z-axis
+           - Makes all leaves have the same inclination for easy comparison
+        4. Vertical alignment to z=0 plane
            - Shifts each timepoint independently so its lowest point is at z=0
         """
 
@@ -1168,7 +1171,11 @@ class LeafSequencesDataset(Dataset):
                     leaf_ts, reference_idx=0
                 )
 
-                # Stage 3: Vertical alignment - shift each timepoint so its lowest point is at z=0
+                # Stage 3: Align main PCA axis to Z-axis (make all leaves parallel)
+                # This aligns the leaf's main direction with the vertical axis
+                self._align_pca_to_z_axis(aligned_timepoints)
+
+                # Stage 4: Vertical alignment - shift each timepoint so its lowest point is at z=0
                 self._align_leaves_to_z_plane(aligned_timepoints)
 
                 # Update the leaf timeseries with aligned data
@@ -1304,6 +1311,88 @@ class LeafSequencesDataset(Dataset):
         # self.check_singular_vector_consistency(R1, R2)
 
         return R, R1
+
+    def _align_pca_to_z_axis(self, timepoints):
+        """
+        Align the main PCA axis of each timepoint to the positive Z-axis (upward).
+        This makes all leaves have the same inclination (parallel to each other)
+        and ensures leaves are not upside down.
+
+        The main axis direction is checked first - if it points more downward than
+        upward, it is flipped before computing the rotation. This ensures the rotation
+        is always less than 90° and leaves remain right-side up.
+
+        Args:
+            timepoints: List of aligned timepoint dictionaries (modified in-place)
+        """
+        target_axis = np.array([0, 0, 1])  # Z-axis
+
+        for tp in timepoints:
+            if tp["points"] is None or len(tp["points"]) < 3:
+                continue
+
+            # Compute PCA on the leaf points
+            points = tp["points"]
+            center = np.mean(points, axis=0)
+            centered = points - center
+
+            # Get principal components
+            U, S, Vt = np.linalg.svd(centered, full_matrices=False)
+            main_axis = Vt[0]  # First principal component (main axis)
+
+            # Normalize
+            main_axis = main_axis / np.linalg.norm(main_axis)
+
+            # Ensure main axis points upward (positive Z direction)
+            # If it points more downward than upward, flip it
+            if np.dot(main_axis, target_axis) < 0:
+                main_axis = -main_axis
+
+            # Compute rotation matrix to align main_axis to Z-axis
+            # Using Rodrigues' rotation formula
+            v = np.cross(main_axis, target_axis)
+            c = np.dot(main_axis, target_axis)
+
+            # Check if vectors are already aligned or opposite
+            if np.abs(c - 1.0) < 1e-8:
+                # Already aligned, no rotation needed
+                continue
+            elif np.abs(c + 1.0) < 1e-8:
+                # Vectors are opposite, rotate 180° around any perpendicular axis
+                # Use X-axis as rotation axis
+                rot_matrix = np.array([
+                    [1, 0, 0],
+                    [0, -1, 0],
+                    [0, 0, -1]
+                ], dtype=np.float64)
+            else:
+                # General case: use Rodrigues' formula
+                s = np.linalg.norm(v)
+                kmat = np.array([
+                    [0, -v[2], v[1]],
+                    [v[2], 0, -v[0]],
+                    [-v[1], v[0], 0]
+                ])
+                rot_matrix = np.eye(3) + kmat + kmat @ kmat * ((1 - c) / (s ** 2))
+
+            # Apply rotation (centered around leaf centroid)
+            tp["points"] = centered @ rot_matrix.T + center
+
+            # Rotate normals if they exist
+            if tp.get("normals") is not None:
+                tp["normals"] = tp["normals"] @ rot_matrix.T
+
+            # Rotate dense points if they exist
+            if tp.get("dense_points") is not None:
+                centered_dense = tp["dense_points"] - center
+                tp["dense_points"] = centered_dense @ rot_matrix.T + center
+
+            # Rotate leaf tip if it exists
+            if tp.get("leaf_tip") is not None:
+                centered_tip = tp["leaf_tip"] - center
+                tp["leaf_tip"] = centered_tip @ rot_matrix.T + center
+
+        return timepoints
 
     def _align_leaves_to_z_plane(self, timepoints):
         """

@@ -7,9 +7,18 @@ import open3d as o3d
 import pymeshlab
 import torch
 
-from plant_shape_analysis.data_preprocessing.detect_leaf_tips_trackplant3D import (
-    COLOR_MAP,
-)
+COLOR_MAP = {  # Color mapping for semantic labels to match roughly the TrackPlant3D paper figures
+    0: np.array([0.0, 1.0, 0.0]),  # Green
+    1: np.array([1.0, 0.0, 0.0]),  # Red
+    2: np.array([1.0, 1.0, 0.0]),  # Yellow
+    3: np.array([0.0, 0.0, 1.0]),  # Blue
+    4: np.array([1.0, 0.65, 0.0]),  # Orange
+    5: np.array([0.5, 0.0, 0.5]),  # Purple
+    6: np.array([0.0, 1.0, 1.0]),  # Cyan
+    7: np.array([1.0, 0.0, 1.0]),  # Magenta
+    8: np.array([0.5, 1.0, 0.0]),  # Lime (Light Green)
+    9: np.array([1.0, 0.75, 0.8]),  # Pink
+}
 
 
 def visualize_pymeshlab_mesh(
