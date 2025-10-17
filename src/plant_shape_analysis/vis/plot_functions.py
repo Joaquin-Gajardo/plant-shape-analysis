@@ -267,7 +267,8 @@ def visualize_leaf_sequence(
 
         # Draw principal axes from transformation["basis"] if available
         if show_principal_axes:
-            transformations = leaf_timeseries["transformations"][i]
+            # transformations = leaf_timeseries["transformations"][i]
+            transformations = timepoint.get("transformations", None)
             if transformations is not None:
                 basis = transformations.get(
                     "basis", None

@@ -998,6 +998,75 @@ class LeafSequencesDataset(Dataset):
             # self._enforce_temporal_normal_consistency(leaf["timepoints"])
         print("Normal estimation complete.")
 
+    def _prealign_with_leaf_tips(self, timepoints):
+        """
+        Pre-align rotation around Y-axis using leaf tip directions.
+        This is done on UNALIGNED data to roughly orient leaves correctly
+        before normal consistency and PCA alignment.
+
+        Uses sequential propagation: aligns each timepoint to the previous one
+        based on the direction from centroid to leaf tip projected onto XZ plane.
+
+        Args:
+            timepoints: List of timepoint dictionaries (modified in-place)
+        """
+        if len(timepoints) < 2:
+            return
+
+        # Sequential propagation: align each timepoint to previous one
+        for i in range(1, len(timepoints)):
+            prev_tp = timepoints[i - 1]
+            curr_tp = timepoints[i]
+
+            # Check if both have leaf tips
+            if prev_tp.get("leaf_tip") is None or curr_tp.get("leaf_tip") is None:
+                continue
+
+            # Get centroids
+            prev_center = np.mean(prev_tp["points"], axis=0)
+            curr_center = np.mean(curr_tp["points"], axis=0)
+
+            # Compute direction from centroid to tip
+            prev_direction = prev_tp["leaf_tip"] - prev_center
+            curr_direction = curr_tp["leaf_tip"] - curr_center
+
+            # Project onto XZ plane (we rotate around Y-axis)
+            prev_xz = np.array([prev_direction[0], prev_direction[2]])
+            curr_xz = np.array([curr_direction[0], curr_direction[2]])
+
+            # Compute rotation angle in XZ plane
+            prev_angle = np.arctan2(prev_xz[1], prev_xz[0])  # Z, X
+            curr_angle = np.arctan2(curr_xz[1], curr_xz[0])
+            rotation_angle = prev_angle - curr_angle
+
+            # Create Y-rotation matrix
+            cos_theta = np.cos(rotation_angle)
+            sin_theta = np.sin(rotation_angle)
+            rot_y = np.array(
+                [[cos_theta, 0, sin_theta], [0, 1, 0], [-sin_theta, 0, cos_theta]],
+                dtype=np.float64,
+            )
+
+            # Apply rotation to current timepoint (centered around its own centroid)
+            # Rotate points
+            centered_points = curr_tp["points"] - curr_center
+            curr_tp["points"] = centered_points @ rot_y.T + curr_center
+
+            # Rotate normals if they exist (direction vectors, no translation)
+            if curr_tp.get("normals") is not None:
+                curr_tp["normals"] = curr_tp["normals"] @ rot_y.T
+
+            # Rotate dense points if they exist
+            if curr_tp.get("dense_points") is not None:
+                centered_dense = curr_tp["dense_points"] - curr_center
+                curr_tp["dense_points"] = centered_dense @ rot_y.T + curr_center
+
+            # Rotate leaf tip
+            centered_tip = curr_tp["leaf_tip"] - curr_center
+            curr_tp["leaf_tip"] = centered_tip @ rot_y.T + curr_center
+
+        return timepoints
+
     def _enforce_temporal_normal_consistency(self, timepoints, reference_idx=0):
         """
         Enforce temporal consistency of normals across timepoints for a leaf sequence.
@@ -1065,21 +1134,30 @@ class LeafSequencesDataset(Dataset):
         """
         Apply PCA alignment to all leaf sequences in the dataset.
 
-        Three-stage approach:
-        1. Fix temporal normal consistency BEFORE alignment (on original unaligned data)
+        Multi-stage approach:
+        0. Pre-align rotation using leaf tips (on original unaligned data)
+           - Uses leaf tip direction to roughly align Z-rotation before other processing
+           - Critical for decaying/problematic leaves where normals might not be reliable
+        1. Fix temporal normal consistency (on pre-aligned data)
            - Uses sequential propagation with nearest neighbor matching
            - Ensures normals point to same face consistently across time
-        2. Apply PCA alignment with normal-aware Z-rotation (using corrected normals)
+        2. Apply PCA alignment with orientation corrections (using corrected normals)
            - Sequential alignment: each timepoint aligned to previous one
-           - Computes optimal Z-axis rotation angle based on normal directions
+           - Z-axis rotation: computes optimal angle based on normal directions
         3. Vertical alignment to z=0 plane
-           - Shifts all timepoints so lowest point is at z=0
+           - Shifts each timepoint independently so its lowest point is at z=0
         """
 
         aligned_timeseries = []
         for i, leaf_ts in enumerate(self.leaf_timeseries):
             if len(leaf_ts["timepoints"]) >= 2:
-                # Stage 1: Enforce temporal normal consistency BEFORE alignment
+                # Stage 0: Pre-align rotation using leaf tips BEFORE everything else
+                # This roughly aligns the leaves so the rest of the pipeline works better
+                # In edge cases such as wilting or decaying leaves
+                if leaf_ts["timepoints"][0].get("leaf_tip") is not None:
+                    self._prealign_with_leaf_tips(leaf_ts["timepoints"])
+
+                # Stage 1: Enforce temporal normal consistency
                 # This ensures all normals point to the same face (inner/outer) consistently
                 if leaf_ts["timepoints"][0].get("normals") is not None:
                     self._enforce_temporal_normal_consistency(leaf_ts["timepoints"])
@@ -1266,7 +1344,7 @@ class LeafSequencesDataset(Dataset):
         Only removes rotation and translation.
         Works with different numbers of points between timepoints.
 
-        Two-stage alignment process:
+        Two-stage alignment process (after pre-alignment):
         1. Sequential PCA alignment: each timepoint is aligned to the previous one (i→i-1)
            rather than all to the first reference. This prevents alternating alignment behavior
            for leaves with changing shape.
@@ -1274,8 +1352,8 @@ class LeafSequencesDataset(Dataset):
            around Z-axis to align normal directions, ensuring leaves maintain consistent
            face orientation across time (e.g., upper surface always points in same direction).
 
-        Note: Vertical alignment to z=0 is done separately in _apply_pca_alignment_to_dataset()
-        as a post-processing step.
+        Note: This assumes timepoints have been pre-aligned using leaf tips (Stage 0) and
+        have consistent normals (Stage 1). Vertical alignment to z=0 is done as Stage 3.
 
         Args:
             leaf_timeseries: Leaf timeseries dict from dataset
