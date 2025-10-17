@@ -671,7 +671,89 @@ class PlantSequencesDataset(Dataset):
                     pcd.orient_normals_consistent_tangent_plane(k=30)
                     normals = np.asarray(pcd.normals)
                     timepoint["normals"] = normals
+
+            # Ensure temporal consistency of normals across timepoints
+            # self._enforce_temporal_normal_consistency_plant(plant_ts["timepoints"])
         print("Normal estimation complete.")
+
+    def _enforce_temporal_normal_consistency_plant(self, timepoints, reference_idx=0):
+        """
+        Enforce temporal consistency of normals across timepoints for a plant sequence.
+        Processes each leaf (organ label) separately to ensure normals remain consistent
+        on the same face of each leaf over time.
+
+        Args:
+            timepoints: List of timepoint dictionaries containing 'points', 'labels', and 'normals'
+            reference_idx: Index of reference timepoint (default: 0)
+        """
+        if len(timepoints) < 2:
+            return
+
+        # Reference timepoint
+        ref_tp = timepoints[reference_idx]
+        if "normals" not in ref_tp or ref_tp["normals"] is None:
+            return
+
+        ref_points = ref_tp["points"]
+        ref_labels = ref_tp["labels"]
+        ref_normals = ref_tp["normals"]
+
+        # Get unique organ labels (excluding stem label 0 if desired, but include all for now)
+        unique_labels = np.unique(ref_labels)
+
+        # Process each subsequent timepoint
+        for i, tp in enumerate(timepoints):
+            if i == reference_idx:
+                continue
+
+            if "normals" not in tp or tp["normals"] is None:
+                continue
+
+            curr_points = tp["points"]
+            curr_labels = tp["labels"]
+            curr_normals = tp["normals"]
+
+            # Process each organ separately
+            for organ_label in unique_labels:
+                # Skip if this organ doesn't exist in current timepoint
+                curr_organ_mask = curr_labels == organ_label
+                if not np.any(curr_organ_mask):
+                    continue
+
+                # Skip if organ doesn't exist in reference
+                ref_organ_mask = ref_labels == organ_label
+                if not np.any(ref_organ_mask):
+                    continue
+
+                # Get points and normals for this organ
+                curr_organ_points = curr_points[curr_organ_mask]
+                curr_organ_normals = curr_normals[curr_organ_mask]
+                ref_organ_points = ref_points[ref_organ_mask]
+                ref_organ_normals = ref_normals[ref_organ_mask]
+
+                # Build KD-tree for reference organ points
+                from scipy.spatial import cKDTree
+
+                ref_tree = cKDTree(ref_organ_points)
+
+                # Find nearest neighbors in reference frame
+                distances, indices = ref_tree.query(curr_organ_points, k=1)
+
+                # For each point, check if normal should be flipped
+                matched_ref_normals = ref_organ_normals[indices]
+
+                # Compute dot product between current and reference normals
+                dot_products = np.sum(curr_organ_normals * matched_ref_normals, axis=1)
+
+                # Flip normals where dot product is negative
+                flip_mask = dot_products < 0
+                curr_organ_normals[flip_mask] = -curr_organ_normals[flip_mask]
+
+                # Update normals in the full array
+                curr_normals[curr_organ_mask] = curr_organ_normals
+
+            # Update normals in timepoint
+            tp["normals"] = curr_normals
 
     def save_transformations(
         self, sequence_name, transformations, save_dir="transformations"
@@ -897,7 +979,63 @@ class LeafSequencesDataset(Dataset):
                     pcd.orient_normals_consistent_tangent_plane(k=30)
                     normals = np.asarray(pcd.normals)
                     timepoint["normals"] = normals
+
+            # Ensure temporal consistency of normals across timepoints
+            self._enforce_temporal_normal_consistency(leaf["timepoints"])
         print("Normal estimation complete.")
+
+    def _enforce_temporal_normal_consistency(self, timepoints, reference_idx=0):
+        """
+        Enforce temporal consistency of normals across timepoints for a leaf sequence.
+        Uses nearest neighbor matching to ensure normals point in the same direction over time.
+
+        Args:
+            timepoints: List of timepoint dictionaries containing 'points' and 'normals'
+            reference_idx: Index of reference timepoint (default: 0)
+        """
+        if len(timepoints) < 2:
+            return
+
+        # Reference timepoint normals
+        ref_tp = timepoints[reference_idx]
+        if "normals" not in ref_tp or ref_tp["normals"] is None:
+            return
+
+        ref_points = ref_tp["points"]
+        ref_normals = ref_tp["normals"]
+
+        # Build KD-tree for reference points
+        from scipy.spatial import cKDTree
+
+        ref_tree = cKDTree(ref_points)
+
+        # Process each subsequent timepoint
+        for i, tp in enumerate(timepoints):
+            if i == reference_idx:
+                continue
+
+            if "normals" not in tp or tp["normals"] is None:
+                continue
+
+            curr_points = tp["points"]
+            curr_normals = tp["normals"]
+
+            # Find nearest neighbors in reference frame
+            distances, indices = ref_tree.query(curr_points, k=1)
+
+            # For each point, check if normal should be flipped
+            # by comparing with nearest neighbor's normal in reference
+            matched_ref_normals = ref_normals[indices]
+
+            # Compute dot product between current and reference normals
+            dot_products = np.sum(curr_normals * matched_ref_normals, axis=1)
+
+            # Flip normals where dot product is negative (pointing opposite direction)
+            flip_mask = dot_products < 0
+            curr_normals[flip_mask] = -curr_normals[flip_mask]
+
+            # Update normals in timepoint
+            tp["normals"] = curr_normals
 
     def _apply_pca_alignment_to_dataset(self):
         """Apply PCA alignment to all leaf sequences in the dataset."""
