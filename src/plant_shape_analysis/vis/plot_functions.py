@@ -169,9 +169,12 @@ def visualize_leaf_sequence(
     leaf_timeseries: dict,
     spacing: float = 30.0,
     show_leaf_tips: bool = True,
-    show_connections: bool = True,
+    show_connections: bool = False,
+    show_coordinate_frame: bool = False,
+    show_principal_axes: bool = False,
     dense_points: bool = False,
     normals_scale: float = 0.5,
+    look_at: Optional[np.ndarray] = None,
     window_name: str = "Leaf Growth Sequence",
 ):
     """
@@ -183,8 +186,11 @@ def visualize_leaf_sequence(
         spacing: Distance between timepoints in the visualization
         show_leaf_tips: Whether to highlight leaf tips as red spheres
         show_connections: Whether to show connections between corresponding points
+        show_coordinate_frame: Whether to show a coordinate frame for orientation
+        show_principal_axes: Whether to show principal axes at each timepoint
         dense_points: Whether to use dense point clouds if available
         view_from_side: If True, rotate scene 90° to view leaves from the side
+        look_at: Optional 3D point to look at in the visualization. Passed as np.ndarray of shape (3,). If None, center based on data.
         window_name: Name for the visualization window
     """
     timepoints = leaf_timeseries["timepoints"]
@@ -260,43 +266,46 @@ def visualize_leaf_sequence(
         # Suppose you have: transformations = [...]  # list of dicts, each with "basis"
 
         # Draw principal axes from transformation["basis"] if available
-        transformations = leaf_timeseries["transformations"][i]
-        if transformations is not None:
-            basis = transformations.get(
-                "basis", None
-            )  # NOTE: can change to "rotation_matrix" too
-            if basis is not None:
-                arrow_origin = points.mean(axis=0)
-                arrow_origin[1] += i * spacing
-                axis_colors = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-                for j in range(3):
-                    axis_vec = basis[j]  # or basis[:, j] depending on your convention
-                    length = 10  # or scale as you wish
-                    arrow = o3d.geometry.TriangleMesh.create_arrow(
-                        cylinder_radius=0.3,
-                        cone_radius=0.6,
-                        cylinder_height=length * 0.8,
-                        cone_height=length * 0.2,
-                    )
-                    # Align arrow with axis_vec
-                    z_axis = np.array([0, 0, 1])
-                    axis_vec_norm = axis_vec / np.linalg.norm(axis_vec)
-                    v = np.cross(z_axis, axis_vec_norm)
-                    c = np.dot(z_axis, axis_vec_norm)
-                    if np.linalg.norm(v) < 1e-8:
-                        R = np.eye(3)
-                    else:
-                        vx = np.array(
-                            [[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]]
+        if show_principal_axes:
+            transformations = leaf_timeseries["transformations"][i]
+            if transformations is not None:
+                basis = transformations.get(
+                    "basis", None
+                )  # NOTE: can change to "rotation_matrix" too
+                if basis is not None:
+                    arrow_origin = points.mean(axis=0)
+                    arrow_origin[1] += i * spacing
+                    axis_colors = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+                    for j in range(3):
+                        axis_vec = basis[
+                            j
+                        ]  # or basis[:, j] depending on your convention
+                        length = 10  # or scale as you wish
+                        arrow = o3d.geometry.TriangleMesh.create_arrow(
+                            cylinder_radius=0.3,
+                            cone_radius=0.6,
+                            cylinder_height=length * 0.8,
+                            cone_height=length * 0.2,
                         )
-                        R = (
-                            np.eye(3)
-                            + vx
-                            + vx @ vx * ((1 - c) / (np.linalg.norm(v) ** 2))
-                        )
-                    arrow.rotate(R, center=np.zeros(3))
-                    arrow.translate(arrow_origin)
-                    arrow.paint_uniform_color(axis_colors[j])
+                        # Align arrow with axis_vec
+                        z_axis = np.array([0, 0, 1])
+                        axis_vec_norm = axis_vec / np.linalg.norm(axis_vec)
+                        v = np.cross(z_axis, axis_vec_norm)
+                        c = np.dot(z_axis, axis_vec_norm)
+                        if np.linalg.norm(v) < 1e-8:
+                            R = np.eye(3)
+                        else:
+                            vx = np.array(
+                                [[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]]
+                            )
+                            R = (
+                                np.eye(3)
+                                + vx
+                                + vx @ vx * ((1 - c) / (np.linalg.norm(v) ** 2))
+                            )
+                        arrow.rotate(R, center=np.zeros(3))
+                        arrow.translate(arrow_origin)
+                        arrow.paint_uniform_color(axis_colors[j])
                     geometries.append(arrow)
 
         # # --- Add principal axes (eigenvectors) visualization as arrows ---
@@ -345,10 +354,23 @@ def visualize_leaf_sequence(
         geometries.append(line_set) if line_set is not None else None
 
     # Add coordinate frame for orientation
-    coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
-        size=10.0, origin=[0, 0, 0]
-    )
-    geometries.append(coord_frame)
+    if show_coordinate_frame:
+        coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
+            size=10.0, origin=[0, 0, 0]
+        )
+        geometries.append(coord_frame)
+
+    # Determine lookat point
+    if look_at is not None:
+        lookat_point = look_at
+    else:
+        # Calculate center based on sequence length and spacing
+        # Y-axis offset is at the middle of the sequence
+        center_y = (len(timepoints) - 1) * spacing / 2
+        # Get X and Z from the mean of all points
+        all_points_concat = np.vstack(all_points)
+        mean_point = all_points_concat.mean(axis=0)
+        lookat_point = np.array([mean_point[0], center_y, mean_point[2]])
 
     # Visualize all geometries with custom camera if needed
     o3d.visualization.draw_geometries(
@@ -357,7 +379,7 @@ def visualize_leaf_sequence(
         point_show_normal=True,
         up=[0, 0, 1],
         front=[1, 0, 0],
-        lookat=[0, 0, 0],
+        lookat=lookat_point,
     )
 
 
@@ -366,9 +388,12 @@ def visualize_plant_sequence(
     spacing: float = 50.0,
     show_leaf_tips: bool = True,
     show_connections: bool = False,
+    show_coordinate_frame: bool = False,
+    show_principal_axes: bool = False,
     dense_points: bool = False,
     color_by_organ: bool = True,
     normals_scale: float = 0.5,
+    look_at: Optional[np.ndarray] = None,
     window_name: str = "Plant Growth Sequence",
     offscreen: bool = False,
 ):
@@ -382,9 +407,12 @@ def visualize_plant_sequence(
         spacing: Distance between timepoints in the visualization
         show_leaf_tips: Whether to highlight leaf tips as red spheres
         show_connections: Whether to show connections between leaf tips across time
+        show_coordinate_frame: Whether to show a coordinate frame for orientation
+        show_principal_axes: Whether to show principal axes at each timepoint
         dense_points: Whether to use dense point clouds if available
         color_by_organ: If True, color by organ labels. If False, color by timepoint
-        view_from_side: If True, rotate scene 90° to view plants from the side
+        normals_scale: Scale factor for normal vectors visualization
+        look_at: Optional 3D point to look at in the visualization. Passed as np.ndarray of shape (3,). If None, center based on data.
         window_name: Name for the visualization window
         offscreen: If True, run visualization in offscreen mode (no GUI and save image)
     """
@@ -427,6 +455,7 @@ def visualize_plant_sequence(
 
     geometries = []
     all_leaf_tips = []  # Track all leaf tips across timepoints for connections
+    all_points = []  # Track all point clouds for calculating center
 
     # Process each timepoint
     points_key = "dense_points" if dense_points else "points"
@@ -482,6 +511,7 @@ def visualize_plant_sequence(
 
         pcd.colors = o3d.utility.Vector3dVector(point_colors)
         geometries.append(pcd)
+        all_points.append(translated_points)
 
         # Add leaf tip visualization if available
         timepoint_tips = []
@@ -497,42 +527,43 @@ def visualize_plant_sequence(
         all_leaf_tips.append(timepoint_tips)
 
         # Draw principal axes from transformation basis if available
-        if transformations and i < len(transformations):
-            trans = transformations[i]
-            basis = trans.get("basis", None)
-            if basis is not None:
-                arrow_origin = points.mean(axis=0)
-                arrow_origin[1] += i * spacing
-                axis_colors = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-                for j in range(3):
-                    axis_vec = basis[j]
-                    length = 15  # Arrow length
-                    arrow = o3d.geometry.TriangleMesh.create_arrow(
-                        cylinder_radius=0.5,
-                        cone_radius=1.0,
-                        cylinder_height=length * 0.8,
-                        cone_height=length * 0.2,
-                    )
-                    # Align arrow with axis_vec
-                    z_axis = np.array([0, 0, 1])
-                    axis_vec_norm = axis_vec / np.linalg.norm(axis_vec)
-                    v = np.cross(z_axis, axis_vec_norm)
-                    c = np.dot(z_axis, axis_vec_norm)
-                    if np.linalg.norm(v) < 1e-8:
-                        R = np.eye(3) if c > 0 else -np.eye(3)
-                    else:
-                        vx = np.array(
-                            [[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]]
+        if show_principal_axes:
+            if transformations and i < len(transformations):
+                trans = transformations[i]
+                basis = trans.get("basis", None)
+                if basis is not None:
+                    arrow_origin = points.mean(axis=0)
+                    arrow_origin[1] += i * spacing
+                    axis_colors = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+                    for j in range(3):
+                        axis_vec = basis[j]
+                        length = 15  # Arrow length
+                        arrow = o3d.geometry.TriangleMesh.create_arrow(
+                            cylinder_radius=0.5,
+                            cone_radius=1.0,
+                            cylinder_height=length * 0.8,
+                            cone_height=length * 0.2,
                         )
-                        R = (
-                            np.eye(3)
-                            + vx
-                            + vx @ vx * ((1 - c) / (np.linalg.norm(v) ** 2))
-                        )
-                    arrow.rotate(R, center=np.zeros(3))
-                    arrow.translate(arrow_origin)
-                    arrow.paint_uniform_color(axis_colors[j])
-                    geometries.append(arrow)
+                        # Align arrow with axis_vec
+                        z_axis = np.array([0, 0, 1])
+                        axis_vec_norm = axis_vec / np.linalg.norm(axis_vec)
+                        v = np.cross(z_axis, axis_vec_norm)
+                        c = np.dot(z_axis, axis_vec_norm)
+                        if np.linalg.norm(v) < 1e-8:
+                            R = np.eye(3) if c > 0 else -np.eye(3)
+                        else:
+                            vx = np.array(
+                                [[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]]
+                            )
+                            R = (
+                                np.eye(3)
+                                + vx
+                                + vx @ vx * ((1 - c) / (np.linalg.norm(v) ** 2))
+                            )
+                        arrow.rotate(R, center=np.zeros(3))
+                        arrow.translate(arrow_origin)
+                        arrow.paint_uniform_color(axis_colors[j])
+                        geometries.append(arrow)
 
     # Add connections between corresponding leaf tips if requested
     if show_connections and len(all_leaf_tips) > 1:
@@ -549,10 +580,11 @@ def visualize_plant_sequence(
                     geometries.append(line_set)
 
     # Add coordinate frame for orientation
-    coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
-        size=20.0, origin=[0, 0, 0]
-    )
-    geometries.append(coord_frame)
+    if show_coordinate_frame:
+        coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
+            size=20.0, origin=[0, 0, 0]
+        )
+        geometries.append(coord_frame)
 
     # Get sequence name if available
     if isinstance(plant_sequence_data, dict):
@@ -561,6 +593,18 @@ def visualize_plant_sequence(
         sequence_info = "Unknown"
 
     alignment_status = " (Aligned)" if is_aligned else ""
+
+    # Determine lookat point
+    if look_at is not None:
+        lookat_point = look_at
+    else:
+        # Calculate center based on sequence length and spacing
+        # Y-axis offset is at the middle of the sequence
+        center_y = (len(timepoints) - 1) * spacing / 2
+        # Get X and Z from the mean of all points
+        all_points_concat = np.vstack(all_points)
+        mean_point = all_points_concat.mean(axis=0)
+        lookat_point = np.array([mean_point[0], center_y, mean_point[2]])
 
     # Visualize all geometries
     if offscreen:
@@ -575,7 +619,7 @@ def visualize_plant_sequence(
             point_show_normal=True,
             up=[0, 0, 1],
             front=[1, 0, 0],
-            lookat=[0, 0, 0],
+            lookat=lookat_point,
         )
 
 
