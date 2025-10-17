@@ -1065,9 +1065,15 @@ class LeafSequencesDataset(Dataset):
         """
         Apply PCA alignment to all leaf sequences in the dataset.
 
-        Multi-stage approach:
+        Three-stage approach:
         1. Fix temporal normal consistency BEFORE alignment (on original unaligned data)
+           - Uses sequential propagation with nearest neighbor matching
+           - Ensures normals point to same face consistently across time
         2. Apply PCA alignment with normal-aware Z-rotation (using corrected normals)
+           - Sequential alignment: each timepoint aligned to previous one
+           - Computes optimal Z-axis rotation angle based on normal directions
+        3. Vertical alignment to z=0 plane
+           - Shifts all timepoints so lowest point is at z=0
         """
 
         aligned_timeseries = []
@@ -1083,6 +1089,9 @@ class LeafSequencesDataset(Dataset):
                 aligned_timepoints, transformations = self.align_leaf_sequence(
                     leaf_ts, reference_idx=0
                 )
+
+                # Stage 3: Vertical alignment - shift each timepoint so its lowest point is at z=0
+                self._align_leaves_to_z_plane(aligned_timepoints)
 
                 # Update the leaf timeseries with aligned data
                 aligned_leaf_ts = leaf_ts.copy()
@@ -1218,6 +1227,36 @@ class LeafSequencesDataset(Dataset):
 
         return R, R1
 
+    def _align_leaves_to_z_plane(self, timepoints):
+        """
+        Vertically align each timepoint independently so its lowest point is at z=0.
+        This ensures leaves are positioned at a consistent height for visualization
+        while preserving vertical growth differences between timepoints.
+
+        Args:
+            timepoints: List of aligned timepoint dictionaries (modified in-place)
+        """
+        for tp in timepoints:
+            if tp["points"] is not None and len(tp["points"]) > 0:
+                # Find minimum z-coordinate for this timepoint
+                min_z = np.min(tp["points"][:, 2])
+                vertical_shift = np.array([0, 0, -min_z])
+
+                # Shift points
+                tp["points"] = tp["points"] + vertical_shift
+
+                # Shift dense points
+                if tp.get("dense_points") is not None:
+                    tp["dense_points"] = tp["dense_points"] + vertical_shift
+
+                # Shift leaf tip
+                if tp.get("leaf_tip") is not None:
+                    tp["leaf_tip"] = tp["leaf_tip"] + vertical_shift
+
+                # Normals are direction vectors - no translation needed
+
+        return timepoints
+
     def align_leaf_sequence(
         self, leaf_timeseries, reference_idx=0, plot_pairwise_alignment=False
     ):
@@ -1227,13 +1266,16 @@ class LeafSequencesDataset(Dataset):
         Only removes rotation and translation.
         Works with different numbers of points between timepoints.
 
-        Uses sequential propagation: each timepoint is aligned to the previous one (i→i-1)
-        rather than all to the first reference. This prevents alternating alignment behavior
-        for leaves with changing shape.
+        Two-stage alignment process:
+        1. Sequential PCA alignment: each timepoint is aligned to the previous one (i→i-1)
+           rather than all to the first reference. This prevents alternating alignment behavior
+           for leaves with changing shape.
+        2. Normal-aware Z-rotation: if normals are available, computes optimal rotation angle
+           around Z-axis to align normal directions, ensuring leaves maintain consistent
+           face orientation across time (e.g., upper surface always points in same direction).
 
-        Uses normal-aware alignment: if normals are available, they are used to resolve
-        the 180° rotation ambiguity inherent in PCA, ensuring leaves maintain consistent
-        face orientation across time (e.g., upper surface always points in same direction).
+        Note: Vertical alignment to z=0 is done separately in _apply_pca_alignment_to_dataset()
+        as a post-processing step.
 
         Args:
             leaf_timeseries: Leaf timeseries dict from dataset
