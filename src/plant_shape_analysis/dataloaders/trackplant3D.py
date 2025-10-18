@@ -99,16 +99,19 @@ class PlantSequencesDataset(Dataset):
         # Build plant timeseries
         self.plant_timeseries = self._build_plant_timeseries()
 
+        # Initialize transformations dictionary (populated if alignment is applied)
+        self.transformations = {}
+
+        # Estimate normals if requested
+        if self.estimate_normals:
+            self._estimate_normals()
+
         # Apply alignment if requested
         if self.alignment_method is not None:
             print(
                 f"Applying {self.alignment_method.upper()} alignment to {len(self.plant_timeseries)} plant sequences..."
             )
-            self._apply_alignment_to_dataset()
-
-        # Estimate normals if requested
-        if self.estimate_normals:
-            self._estimate_normals()
+            self._align_dataset()
 
     def _organize_sequences(self):
         """Organize files into sequences based on crop type, treatment, and plant number"""
@@ -618,8 +621,8 @@ class PlantSequencesDataset(Dataset):
 
         return aligned_sequence, formatted_transformations
 
-    def _apply_alignment_to_dataset(self):
-        """Apply alignment (PCA or ICP) to all plant sequences in the dataset."""
+    def _align_dataset(self):
+        """Apply alignment (PCA, ICP, or stem-based) to all plant sequences in the dataset."""
         aligned_timeseries = []
 
         for plant_ts in self.plant_timeseries:
@@ -808,7 +811,7 @@ class LeafSequencesDataset(Dataset):
         version: str = "v1",
         min_timepoints: int = 3,
         max_timepoints: Optional[int] = None,
-        alignment_method: Optional[str] = None,
+        apply_alignment: bool = False,
         plant_alignment_method: Optional[str] = None,
         estimate_normals: bool = False,
         estimate_plant_normals: bool = False,
@@ -824,9 +827,9 @@ class LeafSequencesDataset(Dataset):
             version: Dataset version (default: "v1")
             min_timepoints: Minimum number of timepoints for a leaf sequence
             max_timepoints: Maximum number of timepoints (None = no limit)
-            alignment_method: Alignment method - None (no alignment) or 'pca' (PCA alignment)
+            apply_alignment: If True, align leaf sequences individually (multi-state approach)
             plant_alignment_method: Alignment method for plants when tracking leaves
-            estimate_normals: If True, estimate normals for all leaves
+            estimate_normals: If True, estimate normals for all leaves. Redundant if plant normals are estimated.
             estimate_plant_normals: If True, estimate normals for plants before tracking leaves. Normals will be included in leaf data.
             use_ply: If True, load from PLY files instead of TXT files
             save_transformations: If True, save transformation matrices when applying alignment
@@ -843,7 +846,7 @@ class LeafSequencesDataset(Dataset):
         self.dataset_path = Path(dataset_path)
         self.min_timepoints = min_timepoints
         self.max_timepoints = max_timepoints
-        self.alignment_method = alignment_method
+        self.apply_alignment = apply_alignment
         self.plant_alignment_method = plant_alignment_method
         self._save_transformations = save_transformations
         self.estimate_normals = estimate_normals
@@ -851,20 +854,24 @@ class LeafSequencesDataset(Dataset):
         # Build leaf timeseries samples
         self.leaf_timeseries = self._build_leaf_timeseries()
 
+        # Initialize transformations dictionary (populated if alignment is applied)
+        self.transformations = {}
+
         if len(self.leaf_timeseries) == 0:
             raise ValueError(
                 "No leaf timeseries found with the given parameters. "
                 "Verify dataset path and file extension (use `use_ply=True` if loading PLY files)."
             )
-        # Apply alignment if requested
-        if self.alignment_method is not None:
-            print(
-                f"Applying {self.alignment_method.upper()} alignment to {len(self.leaf_timeseries)} leaf sequences..."
-            )
-            self._apply_pca_alignment_to_dataset()
-
+        # Estimate normals for leaves if requested
         if self.estimate_normals:
             self._estimate_normals()
+
+        # Apply alignment if requested
+        if self.apply_alignment:
+            print(
+                f"Apply multi-stage PCA-based alignment to {len(self.leaf_timeseries)} leaf sequences..."
+            )
+            self._align_dataset()
 
     def get_sequence_names(self, sequence_list: Optional[list] = None):
         """Get all sequence names"""
@@ -1156,9 +1163,9 @@ class LeafSequencesDataset(Dataset):
             curr_tp["normals"] = curr_normals
         return timepoints
 
-    def _apply_pca_alignment_to_dataset(self):
+    def _align_dataset(self):
         """
-        Apply PCA alignment to all leaf sequences in the dataset.
+        Apply PCA-based alignment to all leaf sequences in the dataset.
 
         Multi-stage approach:
         0. Pre-align rotation using leaf tips (on original unaligned data)
@@ -1424,7 +1431,10 @@ class LeafSequencesDataset(Dataset):
         return timepoints
 
     def align_leaf_sequence(
-        self, leaf_timeseries, reference_idx=0, plot_pairwise_alignment=False
+        self,
+        leaf_timeseries,
+        normal_matching_percentile_threshold=75,
+        plot_pairwise_alignment=False,
     ):
         """
         Align leaf sequence using PCA-based registration with sequential alignment.
