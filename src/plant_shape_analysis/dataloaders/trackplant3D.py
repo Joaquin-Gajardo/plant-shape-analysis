@@ -827,7 +827,7 @@ class LeafSequencesDataset(Dataset):
             alignment_method: Alignment method - None (no alignment) or 'pca' (PCA alignment)
             plant_alignment_method: Alignment method for plants when tracking leaves
             estimate_normals: If True, estimate normals for all leaves
-            estimate_plant_normals: If True, estimate normals for plants before tracking leaves
+            estimate_plant_normals: If True, estimate normals for plants before tracking leaves. Normals will be included in leaf data.
             use_ply: If True, load from PLY files instead of TXT files
             save_transformations: If True, save transformation matrices when applying alignment
             auto_download: If True, automatically download dataset if not found (default: True)
@@ -880,6 +880,33 @@ class LeafSequencesDataset(Dataset):
             if treatment in ts["sequence_name"]:
                 sequences.append(ts)
         return sequences
+
+    def get_timeseries_by_crop(self, crop_name):
+        """Get leaf timeseries filtered by crop"""
+        return [
+            ts
+            for ts in self.leaf_timeseries
+            if ts["sequence_name"].startswith(crop_name)
+        ]
+
+    def get_timeseries_by_treatment(self, treatment):
+        """Get leaf timeseries filtered by treatment"""
+        return [ts for ts in self.leaf_timeseries if treatment in ts["sequence_name"]]
+
+    def get_timeseries_by_sequence_name(self, sequence_name):
+        """Get leaf timeseries by unique sequence name (e.g., 'tomato2_control_plant2_leaf1')"""
+        for ts in self.leaf_timeseries:
+            if ts["sequence_name"] == sequence_name:
+                return ts
+        return None
+
+    def get_timeseries_by_plant_sequence(self, plant_sequence_name):
+        """Get all leaf timeseries for a plant sequence (e.g., 'tomato2_control_plant2')"""
+        return [
+            ts
+            for ts in self.leaf_timeseries
+            if ts["plant_sequence_name"] == plant_sequence_name
+        ]
 
     def _build_leaf_timeseries(self):
         """Build individual leaf timeseries from plant sequences"""
@@ -1067,7 +1094,7 @@ class LeafSequencesDataset(Dataset):
 
         return timepoints
 
-    def _enforce_temporal_normal_consistency(self, timepoints, reference_idx=0):
+    def _enforce_temporal_normal_consistency(self, timepoints):
         """
         Enforce temporal consistency of normals across timepoints for a leaf sequence.
         Uses sequential propagation: compares each timepoint to the previous one.
@@ -1075,7 +1102,6 @@ class LeafSequencesDataset(Dataset):
 
         Args:
             timepoints: List of timepoint dictionaries containing 'points' and 'normals'
-            reference_idx: Index of reference timepoint (default: 0, not used in sequential mode)
         """
         if len(timepoints) < 2:
             return
@@ -1226,33 +1252,6 @@ class LeafSequencesDataset(Dataset):
 
         return dict(info)
 
-    def get_timeseries_by_crop(self, crop_name):
-        """Get leaf timeseries filtered by crop"""
-        return [
-            ts
-            for ts in self.leaf_timeseries
-            if ts["sequence_name"].startswith(crop_name)
-        ]
-
-    def get_timeseries_by_treatment(self, treatment):
-        """Get leaf timeseries filtered by treatment"""
-        return [ts for ts in self.leaf_timeseries if treatment in ts["sequence_name"]]
-
-    def get_timeseries_by_sequence_name(self, sequence_name):
-        """Get leaf timeseries by unique sequence name (e.g., 'tomato2_control_plant2_leaf1')"""
-        for ts in self.leaf_timeseries:
-            if ts["sequence_name"] == sequence_name:
-                return ts
-        return None
-
-    def get_timeseries_by_plant_sequence(self, plant_sequence_name):
-        """Get all leaf timeseries for a plant sequence (e.g., 'tomato2_control_plant2')"""
-        return [
-            ts
-            for ts in self.leaf_timeseries
-            if ts["plant_sequence_name"] == plant_sequence_name
-        ]
-
     def _pca_align(self, pc1, pc2):
         """
         PCA-based alignment that doesn't require same number of points.
@@ -1324,7 +1323,13 @@ class LeafSequencesDataset(Dataset):
 
         Args:
             timepoints: List of aligned timepoint dictionaries (modified in-place)
+
+        Returns:
+            List of transformation dictionaries for each timepoint
         """
+
+        # TODO: reuse PCA from previous alignment step to avoid recomputing
+
         target_axis = np.array([0, 0, 1])  # Z-axis
 
         for tp in timepoints:
@@ -1436,11 +1441,10 @@ class LeafSequencesDataset(Dataset):
            face orientation across time (e.g., upper surface always points in same direction).
 
         Note: This assumes timepoints have been pre-aligned using leaf tips (Stage 0) and
-        have consistent normals (Stage 1). Vertical alignment to z=0 is done as Stage 3.
-
+        have consistent normals (Stage 1).
         Args:
             leaf_timeseries: Leaf timeseries dict from dataset
-            reference_idx: Index of reference timepoint (default: 0, kept for compatibility but not used in sequential mode)
+            normal_matching_percentile_threshold: Distance threshold for matching normals (if None, uses 75th percentile)
             plot_pairwise_alignment: If True, plot pairwise alignment for each timepoint to reference (for debugging)
 
         Returns:
@@ -1495,7 +1499,9 @@ class LeafSequencesDataset(Dataset):
                     distances, indices = ref_tree.query(aligned_points_temp, k=1)
 
                     # Use reliable matches for computing average direction
-                    max_distance = np.percentile(distances, 75)
+                    max_distance = np.percentile(
+                        distances, normal_matching_percentile_threshold
+                    )
                     reliable_matches = distances < max_distance
 
                     if np.any(reliable_matches):
