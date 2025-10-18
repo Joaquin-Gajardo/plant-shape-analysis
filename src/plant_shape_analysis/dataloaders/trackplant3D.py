@@ -102,16 +102,16 @@ class PlantSequencesDataset(Dataset):
         # Initialize transformations dictionary (populated if alignment is applied)
         self.transformations = {}
 
-        # Estimate normals if requested
-        if self.estimate_normals:
-            self._estimate_normals()
-
         # Apply alignment if requested
         if self.alignment_method is not None:
             print(
                 f"Applying {self.alignment_method.upper()} alignment to {len(self.plant_timeseries)} plant sequences..."
             )
             self._align_dataset()
+
+        # Estimate normals if requested
+        if self.estimate_normals:
+            self._estimate_normals()
 
     def _organize_sequences(self):
         """Organize files into sequences based on crop type, treatment, and plant number"""
@@ -643,7 +643,10 @@ class PlantSequencesDataset(Dataset):
 
                 aligned_timeseries.append(aligned_plant_ts)
 
-                # Save transformations if requested
+                # Store transformations in dataset-level dictionary for easy access
+                self.transformations[sequence_name] = transformations
+
+                # Save transformations to file if requested
                 if self._save_transformations:
                     self.save_transformations(sequence_name, transformations)
             else:
@@ -771,29 +774,63 @@ class PlantSequencesDataset(Dataset):
     def save_transformations(
         self, sequence_name, transformations, save_dir="transformations"
     ):
-        """Save transformation matrices to JSON file for later use."""
+        """
+        Save transformation matrices to JSON file for later use.
+        Includes both original transformation info and 4x4 homogeneous matrices.
+
+        Args:
+            sequence_name: Name of the sequence
+            transformations: List of transformation dictionaries
+            save_dir: Directory to save transformations
+        """
         save_path = self.dataset_path / save_dir
         save_path.mkdir(parents=True, exist_ok=True)
 
         filename = f"{sequence_name}_transformations.json"
         filepath = save_path / filename
 
+        json_data = {"sequence_name": sequence_name, "timepoints": []}
+
         # Convert numpy arrays to lists for JSON serialization
-        json_transformations = []
         for trans in transformations:
-            json_trans = trans.copy()
-            if isinstance(json_trans.get("rotation_matrix"), np.ndarray):
-                json_trans["rotation_matrix"] = json_trans["rotation_matrix"].tolist()
-            if isinstance(json_trans.get("basis"), np.ndarray):
-                json_trans["basis"] = json_trans["basis"].tolist()
-            if isinstance(json_trans.get("original_center"), np.ndarray):
-                json_trans["original_center"] = json_trans["original_center"].tolist()
-            if isinstance(json_trans.get("reference_center"), np.ndarray):
-                json_trans["reference_center"] = json_trans["reference_center"].tolist()
-            json_transformations.append(json_trans)
+            json_trans = {}
+
+            # Copy all fields
+            for key, value in trans.items():
+                if isinstance(value, np.ndarray):
+                    json_trans[key] = value.tolist()
+                else:
+                    json_trans[key] = value
+
+            # Build 4x4 homogeneous transformation matrix
+            # For plant alignment: p' = (p - original_center) @ R.T + reference_center + translation
+            R = trans.get("rotation_matrix", np.eye(3))
+            t = trans.get("translation", np.zeros(3))
+            orig_c = trans.get("original_center", np.zeros(3))
+            ref_c = trans.get("reference_center", np.zeros(3))
+            v_shift = trans.get("vertical_shift", np.zeros(3))
+
+            # Build transformation matrix
+            # T = T(ref_c + t + v_shift) @ R @ T(-orig_c)
+            T_neg_c = np.eye(4, dtype=np.float64)
+            T_neg_c[:3, 3] = -orig_c
+
+            T_R = np.eye(4, dtype=np.float64)
+            T_R[:3, :3] = R.T  # Transpose for row vectors
+
+            T_c_plus_t = np.eye(4, dtype=np.float64)
+            T_c_plus_t[:3, 3] = ref_c + t + v_shift
+
+            composed_matrix = T_c_plus_t @ T_R @ T_neg_c
+
+            # Add composed matrices
+            json_trans["composed_matrix"] = composed_matrix.tolist()
+            json_trans["inverse_matrix"] = np.linalg.inv(composed_matrix).tolist()
+
+            json_data["timepoints"].append(json_trans)
 
         with open(filepath, "w") as f:
-            json.dump(json_transformations, f, indent=2)
+            json.dump(json_data, f, indent=2)
 
         print(f"Transformations saved to {filepath}")
 
@@ -813,8 +850,8 @@ class LeafSequencesDataset(Dataset):
         max_timepoints: Optional[int] = None,
         apply_alignment: bool = False,
         plant_alignment_method: Optional[str] = None,
-        estimate_normals: bool = False,
         estimate_plant_normals: bool = False,
+        estimate_normals: bool = False,
         use_ply: bool = False,
         save_transformations: bool = False,
         auto_download: bool = True,
@@ -829,8 +866,8 @@ class LeafSequencesDataset(Dataset):
             max_timepoints: Maximum number of timepoints (None = no limit)
             apply_alignment: If True, align leaf sequences individually (multi-state approach)
             plant_alignment_method: Alignment method for plants when tracking leaves
-            estimate_normals: If True, estimate normals for all leaves. Redundant if plant normals are estimated.
             estimate_plant_normals: If True, estimate normals for plants before tracking leaves. Normals will be included in leaf data.
+            estimate_normals: If True, estimate normals for all leaves. Ignored if plant normals are estimated.
             use_ply: If True, load from PLY files instead of TXT files
             save_transformations: If True, save transformation matrices when applying alignment
             auto_download: If True, automatically download dataset if not found (default: True)
@@ -862,8 +899,9 @@ class LeafSequencesDataset(Dataset):
                 "No leaf timeseries found with the given parameters. "
                 "Verify dataset path and file extension (use `use_ply=True` if loading PLY files)."
             )
-        # Estimate normals for leaves if requested
-        if self.estimate_normals:
+
+        # Estimate normals for leaves if requested (before alignment because alignment uses normals)
+        if estimate_normals and not estimate_plant_normals:
             self._estimate_normals()
 
         # Apply alignment if requested
@@ -1043,22 +1081,57 @@ class LeafSequencesDataset(Dataset):
 
         Args:
             timepoints: List of timepoint dictionaries (modified in-place)
+
+        Returns:
+            List of transformation dictionaries for each timepoint
         """
         if len(timepoints) < 2:
-            return
+            return [
+                {
+                    "stage": "prealign_tip",
+                    "day": timepoints[0]["day"],
+                    "rotation": np.eye(3),
+                    "translation": np.zeros(3),
+                    "center": np.zeros(3),
+                }
+            ]
+
+        transformations = []
+
+        # First timepoint is reference
+        transformations.append(
+            {
+                "stage": "prealign_tip",
+                "day": timepoints[0]["day"],
+                "rotation": np.eye(3),
+                "translation": np.zeros(3),
+                "center": np.mean(timepoints[0]["points"], axis=0),
+            }
+        )
 
         # Sequential propagation: align each timepoint to previous one
         for i in range(1, len(timepoints)):
             prev_tp = timepoints[i - 1]
             curr_tp = timepoints[i]
 
+            curr_center = np.mean(curr_tp["points"], axis=0)
+
             # Check if both have leaf tips
             if prev_tp.get("leaf_tip") is None or curr_tp.get("leaf_tip") is None:
+                # No transformation
+                transformations.append(
+                    {
+                        "stage": "prealign_tip",
+                        "day": curr_tp["day"],
+                        "rotation": np.eye(3),
+                        "translation": np.zeros(3),
+                        "center": curr_center,
+                    }
+                )
                 continue
 
             # Get centroids
             prev_center = np.mean(prev_tp["points"], axis=0)
-            curr_center = np.mean(curr_tp["points"], axis=0)
 
             # Compute direction from centroid to tip
             prev_direction = prev_tp["leaf_tip"] - prev_center
@@ -1099,7 +1172,18 @@ class LeafSequencesDataset(Dataset):
             centered_tip = curr_tp["leaf_tip"] - curr_center
             curr_tp["leaf_tip"] = centered_tip @ rot_y.T + curr_center
 
-        return timepoints
+            # Track transformation
+            transformations.append(
+                {
+                    "stage": "prealign_tip",
+                    "day": curr_tp["day"],
+                    "rotation": rot_y,
+                    "translation": np.zeros(3),
+                    "center": curr_center,
+                }
+            )
+
+        return transformations
 
     def _enforce_temporal_normal_consistency(self, timepoints):
         """
@@ -1186,42 +1270,54 @@ class LeafSequencesDataset(Dataset):
 
         aligned_timeseries = []
         for i, leaf_ts in enumerate(self.leaf_timeseries):
+            sequence_name = leaf_ts["sequence_name"]
+
             if len(leaf_ts["timepoints"]) >= 2:
+                all_transformations = []
+
                 # Stage 0: Pre-align rotation using leaf tips BEFORE everything else
                 # This roughly aligns the leaves so the rest of the pipeline works better
                 # In edge cases such as wilting or decaying leaves
                 if leaf_ts["timepoints"][0].get("leaf_tip") is not None:
-                    self._prealign_with_leaf_tips(leaf_ts["timepoints"])
+                    stage0_trans = self._prealign_with_leaf_tips(leaf_ts["timepoints"])
+                    all_transformations.append(("prealign_tip", stage0_trans))
+                else:
+                    all_transformations.append(("prealign_tip", None))
 
                 # Stage 1: Enforce temporal normal consistency
                 # This ensures all normals point to the same face (inner/outer) consistently
                 if leaf_ts["timepoints"][0].get("normals") is not None:
                     self._enforce_temporal_normal_consistency(leaf_ts["timepoints"])
+                # Note: Normal consistency doesn't change geometry, only flips normal vectors
 
                 # Stage 2: Apply PCA alignment with normal-aware Z-rotation
                 # Now the alignment can use the corrected normals to determine proper orientation
-                aligned_timepoints, transformations = self.align_leaf_sequence(
-                    leaf_ts, reference_idx=0
-                )
+                aligned_timepoints, stage2_trans = self.align_leaf_sequence(leaf_ts)
+                all_transformations.append(("pca_align", stage2_trans))
 
                 # Stage 3: Align main PCA axis to Z-axis (make all leaves parallel)
                 # This aligns the leaf's main direction with the vertical axis
-                self._align_pca_to_z_axis(aligned_timepoints)
+                stage3_trans = self._align_pca_to_z_axis(aligned_timepoints)
+                all_transformations.append(("align_to_z", stage3_trans))
 
                 # Stage 4: Vertical alignment - shift each timepoint so its lowest point is at z=0
-                self._align_leaves_to_xy_plane(aligned_timepoints)
+                stage4_trans = self._align_leaves_to_xy_plane(aligned_timepoints)
+                all_transformations.append(("vertical_align", stage4_trans))
 
                 # Update the leaf timeseries with aligned data
                 aligned_leaf_ts = leaf_ts.copy()
                 aligned_leaf_ts["timepoints"] = aligned_timepoints
                 aligned_leaf_ts["is_aligned"] = True
-                aligned_leaf_ts["transformations"] = transformations
+                aligned_leaf_ts["transformation_stages"] = all_transformations
 
                 aligned_timeseries.append(aligned_leaf_ts)
 
-                # Save transformations if requested
+                # Store transformations in dataset-level dictionary for easy access
+                self.transformations[sequence_name] = all_transformations
+
+                # Save transformations to file if requested
                 if self._save_transformations:
-                    self.save_transformations(leaf_ts, transformations)
+                    self.save_transformations(sequence_name, all_transformations)
 
             else:
                 # Keep original if insufficient timepoints for alignment
@@ -1338,9 +1434,19 @@ class LeafSequencesDataset(Dataset):
         # TODO: reuse PCA from previous alignment step to avoid recomputing
 
         target_axis = np.array([0, 0, 1])  # Z-axis
+        transformations = []
 
         for tp in timepoints:
             if tp["points"] is None or len(tp["points"]) < 3:
+                transformations.append(
+                    {
+                        "stage": "align_to_z",
+                        "day": tp["day"],
+                        "rotation": np.eye(3),
+                        "translation": np.zeros(3),
+                        "center": np.zeros(3),
+                    }
+                )
                 continue
 
             # Compute PCA on the leaf points
@@ -1368,6 +1474,15 @@ class LeafSequencesDataset(Dataset):
             # Check if vectors are already aligned or opposite
             if np.abs(c - 1.0) < 1e-8:
                 # Already aligned, no rotation needed
+                transformations.append(
+                    {
+                        "stage": "align_to_z",
+                        "day": tp["day"],
+                        "rotation": np.eye(3),
+                        "translation": np.zeros(3),
+                        "center": center,
+                    }
+                )
                 continue
             elif np.abs(c + 1.0) < 1e-8:
                 # Vectors are opposite, rotate 180° around any perpendicular axis
@@ -1398,7 +1513,17 @@ class LeafSequencesDataset(Dataset):
                 centered_tip = tp["leaf_tip"] - center
                 tp["leaf_tip"] = centered_tip @ rot_matrix.T + center
 
-        return timepoints
+            transformations.append(
+                {
+                    "stage": "align_to_z",
+                    "day": tp["day"],
+                    "rotation": rot_matrix,
+                    "translation": np.zeros(3),
+                    "center": center,
+                }
+            )
+
+        return transformations
 
     def _align_leaves_to_xy_plane(self, timepoints):
         """
@@ -1408,7 +1533,12 @@ class LeafSequencesDataset(Dataset):
 
         Args:
             timepoints: List of aligned timepoint dictionaries (modified in-place)
+
+        Returns:
+            List of transformation dictionaries for each timepoint
         """
+        transformations = []
+
         for tp in timepoints:
             if tp["points"] is not None and len(tp["points"]) > 0:
                 # Find minimum z-coordinate for this timepoint
@@ -1428,7 +1558,27 @@ class LeafSequencesDataset(Dataset):
 
                 # Normals are direction vectors - no translation needed
 
-        return timepoints
+                transformations.append(
+                    {
+                        "stage": "vertical_align",
+                        "day": tp["day"],
+                        "rotation": np.eye(3),
+                        "translation": vertical_shift,
+                        "center": np.zeros(3),
+                    }
+                )
+            else:
+                transformations.append(
+                    {
+                        "stage": "vertical_align",
+                        "day": tp["day"],
+                        "rotation": np.eye(3),
+                        "translation": np.zeros(3),
+                        "center": np.zeros(3),
+                    }
+                )
+
+        return transformations
 
     def align_leaf_sequence(
         self,
@@ -1600,10 +1750,18 @@ class LeafSequencesDataset(Dataset):
             aligned_tp["leaf_tip"] = aligned_leaf_tip
             aligned_tp["normals"] = aligned_normals
             aligned_timepoints.append(aligned_tp)
+
+            # Store transformation in standard format for compose_transformations
+            # Transform: p' = (p - center) @ rotation.T + ref_center
+            # Standard: p' = (p - center) @ rotation.T + center + translation
+            # Therefore: translation = ref_center - center
             transformations.append(
                 {
+                    "stage": "pca_align",
                     "day": tp["day"],
-                    "rotation_matrix": rotation_matrix,
+                    "rotation": rotation_matrix,
+                    "translation": ref_center - center,
+                    "center": center,
                     "basis": basis,
                     "original_center": center,
                     "reference_center": ref_center,
@@ -1625,35 +1783,267 @@ class LeafSequencesDataset(Dataset):
 
         return aligned_timepoints, transformations
 
+    @staticmethod
+    def compose_transformations(transformation_stages):
+        """
+        Compose all transformation stages into per-timepoint 4x4 homogeneous matrices.
+
+        Args:
+            transformation_stages: List of (stage_name, stage_transformations) tuples
+                Each stage_transformations is a list of dicts with keys:
+                - rotation: 3x3 rotation matrix
+                - translation: 3D translation vector
+                - center: 3D center point (for rotations around a point)
+
+        Returns:
+            List of dicts, one per timepoint, containing:
+            - composed_matrix: 4x4 homogeneous transformation matrix
+            - individual_stages: list of individual transformations in order
+        """
+        # Get number of timepoints from first non-None stage
+        num_timepoints = 0
+        for stage_name, stage_trans in transformation_stages:
+            if stage_trans is not None:
+                num_timepoints = len(stage_trans)
+                break
+
+        if num_timepoints == 0:
+            return []
+
+        composed_transforms = []
+
+        for tp_idx in range(num_timepoints):
+            # Start with identity
+            composed_matrix = np.eye(4, dtype=np.float64)
+            individual_stages_list = []
+            day = None
+
+            # Apply each stage in order
+            for stage_name, stage_trans in transformation_stages:
+                if stage_trans is None:
+                    continue
+
+                trans_info = stage_trans[tp_idx]
+                R = trans_info["rotation"]
+                t = trans_info["translation"]
+                c = trans_info["center"]
+
+                # Extract day from first non-None stage
+                if day is None and "day" in trans_info:
+                    day = trans_info["day"]
+
+                # Build 4x4 transformation matrix for this stage
+                # Transform is: p' = (p - c) @ R.T + c + t
+                # In homogeneous coords: T = T(c+t) @ R @ T(-c)
+
+                # T(-c): translate to origin
+                T_neg_c = np.eye(4, dtype=np.float64)
+                T_neg_c[:3, 3] = -c
+
+                # R: rotation
+                T_R = np.eye(4, dtype=np.float64)
+                T_R[:3, :3] = R.T  # Note: we use R.T because points are row vectors
+
+                # T(c+t): translate back and apply translation
+                T_c_plus_t = np.eye(4, dtype=np.float64)
+                T_c_plus_t[:3, 3] = c + t
+
+                # Compose: first translate to origin, then rotate, then translate back
+                stage_matrix = T_c_plus_t @ T_R @ T_neg_c
+
+                # Compose with previous transformations
+                # For row vectors (p @ M.T), we compose right-to-left: M = Sn @ ... @ S2 @ S1
+                # This way: p @ M.T = p @ S1.T @ S2.T @ ... @ Sn.T (applies S1 first)
+                composed_matrix = stage_matrix @ composed_matrix
+
+                # Store individual stage info
+                individual_stages_list.append(
+                    {
+                        "stage": trans_info.get("stage", stage_name),
+                        "matrix": stage_matrix,
+                        "rotation": R,
+                        "translation": t,
+                        "center": c,
+                    }
+                )
+
+            composed_transforms.append(
+                {
+                    "day": day,
+                    "composed_matrix": composed_matrix,
+                    "individual_stages": individual_stages_list,
+                }
+            )
+
+        return composed_transforms
+
+    @staticmethod
+    def invert_transformation(transform_matrix):
+        """
+        Compute inverse of a 4x4 homogeneous transformation matrix.
+
+        Args:
+            transform_matrix: 4x4 homogeneous transformation matrix
+
+        Returns:
+            4x4 inverse transformation matrix
+        """
+        return np.linalg.inv(transform_matrix)
+
+    @staticmethod
+    def apply_transformation(points, transform_matrix):
+        """
+        Apply a 4x4 homogeneous transformation to points.
+
+        Args:
+            points: Nx3 array of points
+            transform_matrix: 4x4 homogeneous transformation matrix
+
+        Returns:
+            Nx3 array of transformed points
+        """
+        # Convert to homogeneous coordinates
+        points_homo = np.hstack([points, np.ones((len(points), 1))])
+        # Apply transformation (row vectors, so points @ T.T)
+        transformed_homo = points_homo @ transform_matrix.T
+        # Convert back to 3D
+        return transformed_homo[:, :3]
+
+    @staticmethod
+    def apply_inverse_transformations(leaf_timeseries, transformation_stages):
+        """
+        Apply inverse transformations to aligned leaf sequence to reconstruct original positions.
+
+        This reverses all alignment stages (tip pre-alignment, PCA, align to Z, vertical shift)
+        to place the leaf back in its original plant coordinate space.
+
+        Args:
+            leaf_timeseries: Leaf timeseries dict with aligned timepoints
+            transformation_stages: Transformation stages from self.transformations[sequence_name]
+
+        Returns:
+            List of timepoint dicts with points in original (unaligned) space
+        """
+        # Compose all transformation stages
+        composed = LeafSequencesDataset.compose_transformations(transformation_stages)
+
+        original_timepoints = []
+        for tp, comp in zip(leaf_timeseries["timepoints"], composed):
+            # Get inverse matrix (aligned -> original)
+            inv_matrix = LeafSequencesDataset.invert_transformation(comp["composed_matrix"])
+
+            # Apply inverse to points
+            original_points = LeafSequencesDataset.apply_transformation(tp["points"], inv_matrix)
+
+            # Create new timepoint dict with original points
+            original_tp = tp.copy()
+            original_tp["points"] = original_points
+
+            # Also transform dense points if they exist
+            if tp.get("dense_points") is not None:
+                original_tp["dense_points"] = LeafSequencesDataset.apply_transformation(
+                    tp["dense_points"], inv_matrix
+                )
+
+            # Transform leaf tip if it exists
+            if tp.get("leaf_tip") is not None:
+                tip_as_array = tp["leaf_tip"].reshape(1, -1)
+                original_tp["leaf_tip"] = LeafSequencesDataset.apply_transformation(
+                    tip_as_array, inv_matrix
+                )[0]
+
+            # Note: Normals are direction vectors, need rotation-only transform
+            if tp.get("normals") is not None:
+                # Extract rotation part of inverse (upper-left 3x3)
+                R_inv = inv_matrix[:3, :3]
+                original_tp["normals"] = tp["normals"] @ R_inv.T
+
+            original_timepoints.append(original_tp)
+
+        return original_timepoints
+
     def save_transformations(
-        self, leaf_timeseries, transformations, save_dir="transformations"
+        self, sequence_name, transformation_stages, save_dir="transformations"
     ):
-        """Save transformation matrices to JSON file for later use."""
+        """
+        Save transformation matrices to JSON file for later use.
+        Includes both individual transformation stages and composed transformations.
+
+        Args:
+            sequence_name: Name of the sequence
+            transformation_stages: List of (stage_name, stage_transformations) tuples
+            save_dir: Directory to save transformations
+        """
         save_path = self.dataset_path / save_dir
         save_path.mkdir(parents=True, exist_ok=True)
 
-        sequence_name = leaf_timeseries["sequence_name"]
-        leaf_id = leaf_timeseries["leaf_id"]
-
-        filename = f"{sequence_name}_leaf{leaf_id}_transformations.json"
+        filename = f"{sequence_name}_transformations.json"
         filepath = save_path / filename
 
-        # Convert numpy arrays to lists for JSON serialization
-        json_transformations = []
-        for trans in transformations:
-            json_trans = trans.copy()
-            if isinstance(json_trans.get("rotation_matrix"), np.ndarray):
-                json_trans["rotation_matrix"] = json_trans["rotation_matrix"].tolist()
-            if isinstance(json_trans.get("basis"), np.ndarray):
-                json_trans["basis"] = json_trans["basis"].tolist()
-            if isinstance(json_trans.get("original_center"), np.ndarray):
-                json_trans["original_center"] = json_trans["original_center"].tolist()
-            if isinstance(json_trans.get("reference_center"), np.ndarray):
-                json_trans["reference_center"] = json_trans["reference_center"].tolist()
-            json_transformations.append(json_trans)
+        # Compose transformations
+        composed_transforms = self.compose_transformations(transformation_stages)
+
+        # Prepare JSON-serializable data
+        json_data = {"sequence_name": sequence_name, "stages": [], "timepoints": []}
+
+        # Save individual stages
+        for stage_name, stage_trans in transformation_stages:
+            if stage_trans is None:
+                json_data["stages"].append(
+                    {"stage_name": stage_name, "transformations": None}
+                )
+                continue
+
+            stage_list = []
+            for trans in stage_trans:
+                json_trans = {}
+                json_trans["stage"] = trans.get("stage", stage_name)
+                if isinstance(trans.get("rotation"), np.ndarray):
+                    json_trans["rotation"] = trans["rotation"].tolist()
+                if isinstance(trans.get("translation"), np.ndarray):
+                    json_trans["translation"] = trans["translation"].tolist()
+                if isinstance(trans.get("center"), np.ndarray):
+                    json_trans["center"] = trans["center"].tolist()
+                # Include any other fields (like day, is_reference, etc.)
+                for key, value in trans.items():
+                    if key not in ["rotation", "translation", "center", "stage"]:
+                        if isinstance(value, np.ndarray):
+                            json_trans[key] = value.tolist()
+                        else:
+                            json_trans[key] = value
+                stage_list.append(json_trans)
+
+            json_data["stages"].append(
+                {"stage_name": stage_name, "transformations": stage_list}
+            )
+
+        # Save composed transformations per timepoint
+        for tp_idx, comp_trans in enumerate(composed_transforms):
+            tp_data = {
+                "timepoint_index": tp_idx,
+                "day": comp_trans["day"],
+                "composed_matrix": comp_trans["composed_matrix"].tolist(),
+                "inverse_matrix": self.invert_transformation(
+                    comp_trans["composed_matrix"]
+                ).tolist(),
+                "individual_stages": [],
+            }
+
+            for stage_info in comp_trans["individual_stages"]:
+                tp_data["individual_stages"].append(
+                    {
+                        "stage": stage_info["stage"],
+                        "matrix": stage_info["matrix"].tolist(),
+                        "rotation": stage_info["rotation"].tolist(),
+                        "translation": stage_info["translation"].tolist(),
+                        "center": stage_info["center"].tolist(),
+                    }
+                )
+
+            json_data["timepoints"].append(tp_data)
 
         with open(filepath, "w") as f:
-            json.dump(json_transformations, f, indent=2)
+            json.dump(json_data, f, indent=2)
 
         print(f"Transformations saved to {filepath}")
 
