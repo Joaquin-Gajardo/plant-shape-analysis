@@ -1834,15 +1834,16 @@ class LeafSequencesDataset(Dataset):
 
                 # Build 4x4 transformation matrix for this stage
                 # Transform is: p' = (p - c) @ R.T + c + t
-                # In homogeneous coords: T = T(c+t) @ R @ T(-c)
+                # For row vectors: [p,1] @ M.T gives [p @ M[:3,:3].T + M[:3,3], 1]
+                # We want: p @ M[:3,:3].T = p @ R.T, so M[:3,:3] = R (not R.T!)
 
                 # T(-c): translate to origin
                 T_neg_c = np.eye(4, dtype=np.float64)
                 T_neg_c[:3, 3] = -c
 
-                # R: rotation
+                # R: rotation matrix for row vectors
                 T_R = np.eye(4, dtype=np.float64)
-                T_R[:3, :3] = R.T  # Note: we use R.T because points are row vectors
+                T_R[:3, :3] = R  # Store R directly (will be transposed when applied)
 
                 # T(c+t): translate back and apply translation
                 T_c_plus_t = np.eye(4, dtype=np.float64)
