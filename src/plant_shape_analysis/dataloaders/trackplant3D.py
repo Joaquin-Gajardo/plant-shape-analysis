@@ -1176,7 +1176,7 @@ class LeafSequencesDataset(Dataset):
                 self._align_pca_to_z_axis(aligned_timepoints)
 
                 # Stage 4: Vertical alignment - shift each timepoint so its lowest point is at z=0
-                self._align_leaves_to_z_plane(aligned_timepoints)
+                self._align_leaves_to_xy_plane(aligned_timepoints)
 
                 # Update the leaf timeseries with aligned data
                 aligned_leaf_ts = leaf_ts.copy()
@@ -1360,20 +1360,14 @@ class LeafSequencesDataset(Dataset):
             elif np.abs(c + 1.0) < 1e-8:
                 # Vectors are opposite, rotate 180° around any perpendicular axis
                 # Use X-axis as rotation axis
-                rot_matrix = np.array([
-                    [1, 0, 0],
-                    [0, -1, 0],
-                    [0, 0, -1]
-                ], dtype=np.float64)
+                rot_matrix = np.array(
+                    [[1, 0, 0], [0, -1, 0], [0, 0, -1]], dtype=np.float64
+                )
             else:
                 # General case: use Rodrigues' formula
                 s = np.linalg.norm(v)
-                kmat = np.array([
-                    [0, -v[2], v[1]],
-                    [v[2], 0, -v[0]],
-                    [-v[1], v[0], 0]
-                ])
-                rot_matrix = np.eye(3) + kmat + kmat @ kmat * ((1 - c) / (s ** 2))
+                kmat = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+                rot_matrix = np.eye(3) + kmat + kmat @ kmat * ((1 - c) / (s**2))
 
             # Apply rotation (centered around leaf centroid)
             tp["points"] = centered @ rot_matrix.T + center
@@ -1394,9 +1388,9 @@ class LeafSequencesDataset(Dataset):
 
         return timepoints
 
-    def _align_leaves_to_z_plane(self, timepoints):
+    def _align_leaves_to_xy_plane(self, timepoints):
         """
-        Vertically align each timepoint independently so its lowest point is at z=0.
+        Align each timepoint independently so its lowest point is at z=0.
         This ensures leaves are positioned at a consistent height for visualization
         while preserving vertical growth differences between timepoints.
 
