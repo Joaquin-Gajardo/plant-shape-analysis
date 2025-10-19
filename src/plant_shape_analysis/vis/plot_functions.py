@@ -183,6 +183,7 @@ def visualize_leaf_sequence(
     show_principal_axes: bool = False,
     dense_points: bool = False,
     normals_scale: float = 0.5,
+    yaw_angle: float = 0.0,
     look_at: Optional[np.ndarray] = None,
     window_name: str = "Leaf Growth Sequence",
 ):
@@ -198,7 +199,8 @@ def visualize_leaf_sequence(
         show_coordinate_frame: Whether to show a coordinate frame for orientation
         show_principal_axes: Whether to show principal axes at each timepoint
         dense_points: Whether to use dense point clouds if available
-        view_from_side: If True, rotate scene 90° to view leaves from the side
+        normals_scale: Scale factor for normal vectors visualization
+        yaw_angle: Rotation angle in degrees around the z-axis to orient geometries (default: 0.0)
         look_at: Optional 3D point to look at in the visualization. Passed as np.ndarray of shape (3,). If None, center based on data.
         window_name: Name for the visualization window
     """
@@ -221,6 +223,16 @@ def visualize_leaf_sequence(
     points_key = "dense_points" if dense_points else "points"
     normals_key = "dense_normals" if dense_points else "normals"
 
+    # Create rotation matrix if yaw_angle is specified
+    R_z = None
+    if yaw_angle != 0.0:
+        theta = np.radians(yaw_angle)
+        R_z = np.array([
+            [np.cos(theta), -np.sin(theta), 0],
+            [np.sin(theta), np.cos(theta), 0],
+            [0, 0, 1]
+        ])
+
     for i, timepoint in enumerate(timepoints):
         points = timepoint[points_key]
         day = timepoint["day"]
@@ -231,13 +243,18 @@ def visualize_leaf_sequence(
                 f"Leaf sequence {leaf_timeseries['sequence_name']}, timepoint {day} does not have '{points_key}' data."
             )
 
-        # Create point cloud for this timepoint
-        pcd = o3d.geometry.PointCloud()
-
         # Translate each timepoint along Y axis for spacing
         translated_points = points.copy()
         translated_points[:, 1] += i * spacing
 
+        # Calculate this timepoint's center (for rotation)
+        timepoint_center = translated_points.mean(axis=0)
+
+        # Collect geometries for this timepoint
+        timepoint_geometries = []
+
+        # Create point cloud for this timepoint
+        pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(translated_points)
 
         # Add normals if available
@@ -254,8 +271,7 @@ def visualize_leaf_sequence(
         point_colors = np.tile(colors[i], (len(points), 1))
         pcd.colors = o3d.utility.Vector3dVector(point_colors)
 
-        geometries.append(pcd)
-        all_points.append(translated_points)
+        timepoint_geometries.append(pcd)
 
         # Add leaf tip visualization if available
         if leaf_tip is None:
@@ -263,14 +279,13 @@ def visualize_leaf_sequence(
         else:
             tip_position = leaf_tip.copy()
             tip_position[1] += i * spacing
-            leaf_tip_positions.append(tip_position)
 
             # Add leaf tip sphere
             if show_leaf_tips:
                 tip_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=1.0)
                 tip_sphere.translate(tip_position)
                 tip_sphere.paint_uniform_color([1.0, 0.0, 0.0])  # Red color
-                geometries.append(tip_sphere)
+                timepoint_geometries.append(tip_sphere)
 
         # Draw principal axes from transformation["basis"] if available
         if show_principal_axes:
@@ -310,6 +325,10 @@ def visualize_leaf_sequence(
 
                 # Draw the principal axes arrows
                 if basis is not None:
+                    # Apply yaw rotation to basis vectors if needed
+                    if R_z is not None:
+                        basis = basis @ R_z.T
+
                     arrow_origin = points.mean(axis=0)
                     arrow_origin[1] += i * spacing
                     axis_colors = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
@@ -341,7 +360,25 @@ def visualize_leaf_sequence(
                         arrow.rotate(R, center=np.zeros(3))
                         arrow.translate(arrow_origin)
                         arrow.paint_uniform_color(axis_colors[j])
-                        geometries.append(arrow)
+                        timepoint_geometries.append(arrow)
+
+        # Apply yaw rotation to all geometries for this timepoint
+        if R_z is not None:
+            for geom in timepoint_geometries:
+                geom.rotate(R_z, center=timepoint_center)
+            # Also rotate tip_position if it exists
+            if leaf_tip is not None:
+                tip_position = R_z @ (tip_position - timepoint_center) + timepoint_center
+
+        # Track leaf tip position after rotation
+        if leaf_tip is not None:
+            leaf_tip_positions.append(tip_position)
+
+        # Add to main geometries list and track points
+        geometries.extend(timepoint_geometries)
+        # Get rotated points for tracking
+        rotated_points = np.asarray(timepoint_geometries[0].points)
+        all_points.append(rotated_points)
 
         # # --- Add principal axes (eigenvectors) visualization as arrows ---
         # # Compute PCA (eigenvectors of covariance)
@@ -428,6 +465,7 @@ def visualize_plant_sequence(
     dense_points: bool = False,
     color_by_organ: bool = True,
     normals_scale: float = 0.5,
+    yaw_angle: float = 0.0,
     look_at: Optional[np.ndarray] = None,
     window_name: str = "Plant Growth Sequence",
     offscreen: bool = False,
@@ -447,6 +485,7 @@ def visualize_plant_sequence(
         dense_points: Whether to use dense point clouds if available
         color_by_organ: If True, color by organ labels. If False, color by timepoint
         normals_scale: Scale factor for normal vectors visualization
+        yaw_angle: Rotation angle in degrees around the z-axis to orient geometries (default: 0.0)
         look_at: Optional 3D point to look at in the visualization. Passed as np.ndarray of shape (3,). If None, center based on data.
         window_name: Name for the visualization window
         offscreen: If True, run visualization in offscreen mode (no GUI and save image)
@@ -497,6 +536,16 @@ def visualize_plant_sequence(
     labels_key = "dense_labels" if dense_points else "labels"
     normals_key = "dense_normals" if dense_points else "normals"
 
+    # Create rotation matrix if yaw_angle is specified
+    R_z = None
+    if yaw_angle != 0.0:
+        theta = np.radians(yaw_angle)
+        R_z = np.array([
+            [np.cos(theta), -np.sin(theta), 0],
+            [np.sin(theta), np.cos(theta), 0],
+            [0, 0, 1]
+        ])
+
     for i, timepoint in enumerate(timepoints):
         points = timepoint.get(points_key)
         labels = timepoint.get(labels_key)
@@ -507,13 +556,18 @@ def visualize_plant_sequence(
             print(f"Timepoint day {day} does not have '{points_key}' data.")
             continue
 
-        # Create point cloud for this timepoint
-        pcd = o3d.geometry.PointCloud()
-
         # Translate each timepoint along Y axis for spacing
         translated_points = points.copy()
         translated_points[:, 1] += i * spacing
 
+        # Calculate this timepoint's center (for rotation)
+        timepoint_center = translated_points.mean(axis=0)
+
+        # Collect geometries for this timepoint
+        timepoint_geometries = []
+
+        # Create point cloud for this timepoint
+        pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(translated_points)
 
         # Add normals if available
@@ -545,8 +599,7 @@ def visualize_plant_sequence(
             point_colors = np.tile(timepoint_colors[i], (len(points), 1))
 
         pcd.colors = o3d.utility.Vector3dVector(point_colors)
-        geometries.append(pcd)
-        all_points.append(translated_points)
+        timepoint_geometries.append(pcd)
 
         # Add leaf tip visualization if available
         timepoint_tips = []
@@ -556,10 +609,8 @@ def visualize_plant_sequence(
                 tip_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=1.5)
                 tip_sphere.translate(tip_coord)
                 tip_sphere.paint_uniform_color([1.0, 0.0, 0.0])  # Red color
-                geometries.append(tip_sphere)
+                timepoint_geometries.append(tip_sphere)
                 timepoint_tips.append(tip_coord)
-
-        all_leaf_tips.append(timepoint_tips)
 
         # Draw principal axes from transformation basis if available
         if show_principal_axes:
@@ -567,6 +618,10 @@ def visualize_plant_sequence(
                 trans = transformations[i]
                 basis = trans.get("basis", None)
                 if basis is not None:
+                    # Apply yaw rotation to basis vectors if needed
+                    if R_z is not None:
+                        basis = basis @ R_z.T
+
                     arrow_origin = points.mean(axis=0)
                     arrow_origin[1] += i * spacing
                     axis_colors = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
@@ -598,7 +653,25 @@ def visualize_plant_sequence(
                         arrow.rotate(R, center=np.zeros(3))
                         arrow.translate(arrow_origin)
                         arrow.paint_uniform_color(axis_colors[j])
-                        geometries.append(arrow)
+                        timepoint_geometries.append(arrow)
+
+        # Apply yaw rotation to all geometries for this timepoint
+        if R_z is not None:
+            for geom in timepoint_geometries:
+                geom.rotate(R_z, center=timepoint_center)
+            # Also rotate tip positions
+            rotated_tips = []
+            for tip_coord in timepoint_tips:
+                rotated_tip = R_z @ (tip_coord - timepoint_center) + timepoint_center
+                rotated_tips.append(rotated_tip)
+            timepoint_tips = rotated_tips
+
+        # Add to main lists
+        all_leaf_tips.append(timepoint_tips)
+        geometries.extend(timepoint_geometries)
+        # Get rotated points for tracking
+        rotated_points = np.asarray(timepoint_geometries[0].points)
+        all_points.append(rotated_points)
 
     # Add connections between corresponding leaf tips if requested
     if show_connections and len(all_leaf_tips) > 1:
