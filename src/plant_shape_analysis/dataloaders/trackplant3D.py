@@ -20,7 +20,17 @@ class PlantSequencesDataset(Dataset):
                 "size_mb": 751,
                 "description": "TrackPlant3D v1 dataset with leaf keypoint annotations and dense point clouds",
             },
-        }
+        },
+        "v2": {
+            "data_dirs": {"sparse": "gt_corrected_v2", "dense": "dense"},
+            "download_info": {
+                "url": "https://polybox.ethz.ch/index.php/s/TODO/download",  # TODO: Update when uploaded
+                "filename": "v2.zip",
+                "extract_dir": "v2",
+                "size_mb": 1200,  # Estimated (larger due to normals)
+                "description": "TrackPlant3D v2 with pre-aligned point clouds and corrected normals (faster loading)",
+            },
+        },
     }
 
     def __init__(
@@ -202,20 +212,27 @@ class PlantSequencesDataset(Dataset):
         return self.sequences.get(sequence_name, [])
 
     def load_point_cloud(self, file_path):
-        """Load point cloud from txt or ply file"""
+        """Load point cloud from txt or ply file, including normals if available"""
         if self.use_ply:
             # Load from PLY file
             pcd = o3d.t.io.read_point_cloud(str(file_path))
             points = pcd.point.positions.numpy()
             labels = pcd.point.organ_label.numpy().flatten().astype(int)
-            return points, labels
+
+            # Load normals if they exist in the PLY file
+            normals = None
+            if "normals" in pcd.point:
+                normals = pcd.point.normals.numpy()
+
+            return points, labels, normals
         else:
             # Load from TXT file
             # File format: x, y, z, organ_instance_label
             data = np.loadtxt(file_path)
             points = data[:, :3]  # x, y, z coordinates
             labels = data[:, 3].astype(int)  # labels
-            return points, labels
+            normals = None  # TXT files don't have normals
+            return points, labels, normals
 
     def load_dense_point_cloud(self, file_path):
         """Load dense point cloud for a specific sequence and day if available"""
@@ -223,7 +240,7 @@ class PlantSequencesDataset(Dataset):
         dense_file_path = self.dense_path / crop_name / file_path.name
         if dense_file_path.exists():
             return self.load_point_cloud(dense_file_path)
-        return None, None
+        return None, None, None
 
     def load_leaf_tips(self, point_cloud_path):
         """Load leaf tips for a specific sequence and day"""
@@ -289,19 +306,23 @@ class PlantSequencesDataset(Dataset):
             day = int(day_match.group(1)) if day_match else 0
 
             # Load point cloud
-            points, labels = self.load_point_cloud(file_path)
+            points, labels, normals = self.load_point_cloud(file_path)
 
             # Load dense point cloud if available
-            dense_points, dense_labels = self.load_dense_point_cloud(file_path)
+            dense_points, dense_labels, dense_normals = self.load_dense_point_cloud(
+                file_path
+            )
 
             # Load leaf tips if available
             leaf_tip_idxs, leaf_tip_coordinates = self.load_leaf_tips(file_path)
 
             # Apply orientation correction if needed (before validation)
             if needs_correction:
-                points, _ = self._correct_orientation(points)
+                points, normals = self._correct_orientation(points, normals)
                 if dense_points is not None:
-                    dense_points, _ = self._correct_orientation(dense_points)
+                    dense_points, dense_normals = self._correct_orientation(
+                        dense_points, dense_normals
+                    )
                 if leaf_tip_coordinates.size > 0:
                     leaf_tip_coordinates, _ = self._correct_orientation(
                         leaf_tip_coordinates
@@ -330,6 +351,7 @@ class PlantSequencesDataset(Dataset):
                     "day": day,
                     "points": points,
                     "labels": labels,
+                    "normals": normals,
                     "dense_points": dense_points,
                     "dense_labels": dense_labels,
                     "leaf_tip_idxs": leaf_tip_idxs,
@@ -662,7 +684,21 @@ class PlantSequencesDataset(Dataset):
 
     def _estimate_normals(self):
         """Estimate normals for all plants in the dataset."""
-        # NOTE: these are only estimated for sparse points, as dense points is takes a long time
+        # NOTE: these are only estimated for sparse points, as dense points takes a long time
+
+        # Check if normals are already loaded from file
+        has_normals = any(
+            timepoint.get("normals") is not None
+            for plant_ts in self.plant_timeseries
+            for timepoint in plant_ts["timepoints"]
+        )
+
+        if has_normals:
+            print("Warning: Normals already present in dataset. Re-estimating anyway.")
+            print(
+                "  (Set estimate_normals=False to skip estimation and use loaded normals)"
+            )
+
         print("Estimating normals for all sparse plants in the dataset...")
         for plant_ts in self.plant_timeseries:
             for timepoint in plant_ts["timepoints"]:
@@ -1052,6 +1088,21 @@ class LeafSequencesDataset(Dataset):
         return dict(leaf_tracks)
 
     def _estimate_normals(self):
+        # Check if normals are already loaded from plant dataset
+        has_normals = any(
+            timepoint.get("normals") is not None
+            for leaf in self.leaf_timeseries
+            for timepoint in leaf["timepoints"]
+        )
+
+        if has_normals:
+            print(
+                "Warning: Normals already present in leaf dataset (from plant dataset). Re-estimating anyway."
+            )
+            print(
+                "  (Set estimate_normals=False to skip estimation and use loaded normals)"
+            )
+
         print("Estimating normals for all leaves in the dataset...")
         for leaf in self.leaf_timeseries:
             for timepoint in leaf["timepoints"]:
@@ -1437,8 +1488,6 @@ class LeafSequencesDataset(Dataset):
         Returns:
             List of transformation dictionaries for each timepoint
         """
-
-        # TODO: reuse PCA from previous alignment step to avoid recomputing
 
         target_axis = np.array([0, 0, 1])  # Z-axis
         transformations = []
@@ -1947,10 +1996,14 @@ class LeafSequencesDataset(Dataset):
         original_timepoints = []
         for tp, comp in zip(leaf_timeseries["timepoints"], composed):
             # Get inverse matrix (aligned -> original)
-            inv_matrix = LeafSequencesDataset.invert_transformation(comp["composed_matrix"])
+            inv_matrix = LeafSequencesDataset.invert_transformation(
+                comp["composed_matrix"]
+            )
 
             # Apply inverse to points
-            original_points = LeafSequencesDataset.apply_transformation(tp["points"], inv_matrix)
+            original_points = LeafSequencesDataset.apply_transformation(
+                tp["points"], inv_matrix
+            )
 
             # Create new timepoint dict with original points
             original_tp = tp.copy()
