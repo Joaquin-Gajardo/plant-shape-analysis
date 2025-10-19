@@ -44,6 +44,8 @@ class PlantSequencesDataset(Dataset):
         save_transformations=False,
         estimate_normals=False,
         auto_download=True,
+        stem_alignment_verbose=False,
+        manual_z_rotations=None,
     ):
         """
         Initialize PlantSequencesDataset.
@@ -56,6 +58,10 @@ class PlantSequencesDataset(Dataset):
             save_transformations: If True, save transformation matrices when applying alignment
             estimate_normals: If True, estimate normals for all plant point clouds
             auto_download: If True, automatically download dataset if not found (default: True)
+            stem_alignment_verbose: If True, print debug information during stem alignment (default: False)
+            manual_z_rotations: Dict mapping sequence_name -> {timepoint_idx: angle_deg}
+                               Example: {"tobacco_control_plant1": {6: 144.0}}
+            selected_sequences: Optional list of sequence names to process (default: None = all sequences)
         """
         # Validate version and get config
         if version not in self.DATASET_CONFIGS:
@@ -94,6 +100,8 @@ class PlantSequencesDataset(Dataset):
         self.alignment_method = alignment_method
         self._save_transformations = save_transformations
         self.estimate_normals = estimate_normals
+        self.stem_alignment_verbose = stem_alignment_verbose
+        self.manual_z_rotations = manual_z_rotations or {}
 
         # Set paths from config
         self.sparse_path = self.dataset_path / data_dirs["sparse"]
@@ -582,13 +590,17 @@ class PlantSequencesDataset(Dataset):
         if len(sequence_data) < 2:
             return sequence_data, []
 
+        # Get manual Z-rotations for this sequence (if any)
+        sequence_manual_rotations = self.manual_z_rotations.get(sequence_name, None)
+
         # Run stem-based alignment
         aligned_timepoints, transformations = align_plant_sequence_stem_based(
             sequence_data,
             use_rotation=True,
             max_iterations=200,
             vertical_correction=True,
-            base_height_mm=10,
+            manual_z_rotations=sequence_manual_rotations,
+            verbose=self.stem_alignment_verbose,
         )
 
         # Transform dense points and leaf tips using the same transformations
@@ -610,11 +622,16 @@ class PlantSequencesDataset(Dataset):
                 dense_points = timepoint_data["dense_points"]
 
                 if i == 0:
-                    # Reference frame - no transformation
-                    aligned_dense_points = dense_points
+                    # Reference frame - only apply vertical shift if present
+                    if vertical_shift is not None and np.any(vertical_shift != 0):
+                        aligned_dense_points = dense_points + vertical_shift
+                    else:
+                        aligned_dense_points = dense_points
                 else:
                     # Apply same transformation as sparse points
-                    if trans_info.get("stage") == "stage2_vertical_correction":
+                    # rotation and translation are cumulative from all stages
+                    # vertical_shift is applied last (stage 2 or 3)
+                    if vertical_shift is not None and np.any(vertical_shift != 0):
                         # Apply rotation, translation, and vertical shift
                         aligned_dense_points = (
                             dense_points @ rotation.T + translation + vertical_shift
@@ -625,6 +642,17 @@ class PlantSequencesDataset(Dataset):
 
                 result_tp["dense_points"] = aligned_dense_points
 
+            # Transform normals if they exist (normals are direction vectors, only rotate)
+            if timepoint_data.get("normals") is not None:
+                normals = timepoint_data["normals"]
+
+                if i == 0:
+                    # Reference frame - no rotation
+                    result_tp["normals"] = normals
+                else:
+                    # Apply cumulative rotation (no translation for direction vectors)
+                    result_tp["normals"] = normals @ rotation.T
+
             # Note: leaf_tip_idxs remain the same (indices into aligned points)
             # The aligned coordinates are automatically correct since points are aligned
 
@@ -633,20 +661,25 @@ class PlantSequencesDataset(Dataset):
         # Format transformations to match other alignment methods
         formatted_transformations = []
         for trans_info in transformations:
-            formatted_transformations.append(
-                {
-                    "day": trans_info["day"],
-                    "rotation_matrix": trans_info["rotation"],
-                    "basis": trans_info["rotation"],
-                    "translation": trans_info["translation"],
-                    "vertical_shift": trans_info.get("vertical_shift", np.zeros(3)),
-                    "original_center": np.zeros(3),  # Not used in stem-based
-                    "reference_center": np.zeros(3),  # Not used in stem-based
-                    "is_reference": trans_info["is_reference"],
-                    "method": "stem_based",
-                    "stage": trans_info["stage"],
-                }
-            )
+            formatted_trans = {
+                "day": trans_info["day"],
+                "rotation_matrix": trans_info["rotation"],
+                "basis": trans_info["rotation"],
+                "translation": trans_info["translation"],
+                "vertical_shift": trans_info.get("vertical_shift", np.zeros(3)),
+                "original_center": np.zeros(3),  # Not used in stem-based
+                "reference_center": np.zeros(3),  # Not used in stem-based
+                "is_reference": trans_info["is_reference"],
+                "method": "stem_based",
+                "stage": trans_info["stage"],
+            }
+            # Add manual Z-rotation details if present
+            if "manual_z_rotation_deg" in trans_info:
+                formatted_trans["manual_z_rotation_deg"] = trans_info[
+                    "manual_z_rotation_deg"
+                ]
+
+            formatted_transformations.append(formatted_trans)
 
         return aligned_sequence, formatted_transformations
 

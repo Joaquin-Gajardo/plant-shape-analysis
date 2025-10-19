@@ -98,21 +98,25 @@ def align_plant_sequence_stem_based(
     use_rotation=True,
     max_iterations=200,
     vertical_correction=True,
-    base_height_mm=10,
+    manual_z_rotations=None,
+    verbose=False,
 ):
     """
-    Align plant sequence using stem-based ICP with optional vertical correction.
+    Align plant sequence using stem-based ICP with optional vertical correction and manual Z-rotations.
 
-    This is a two-stage alignment approach:
-    - Stage 1: Stem-based ICP alignment (rotation + translation)
-    - Stage 2 (optional): Vertical shift correction using stem base centroid
+    Multi-stage alignment approach:
+    - Stage 1: Stem-based ICP alignment (rotation + translation using only stem points)
+    - Stage 2 (optional): Manual Z-axis rotations for specific timesteps
+    - Stage 3 (optional): Vertical shift correction to align lowest points to origin
 
     Args:
         timepoints: List of timepoint dictionaries with 'points' and 'labels' keys
         use_rotation: Whether to use rotation in stage 1
-        max_iterations: Maximum ICP iterations
-        vertical_correction: If True, apply vertical correction in stage 2
-        base_height_mm: Height in mm from stem base to use for vertical correction (default: 10mm)
+        max_iterations: Maximum ICP iterations for stage 1
+        vertical_correction: If True, apply vertical correction to align lowest points (stage 3)
+        manual_z_rotations: Dict mapping timepoint index to rotation angle in degrees
+                           Example: {6: 144.0} applies 144° rotation to timepoint 6
+        verbose: If True, print debug information
 
     Returns:
         aligned_timepoints: List of aligned timepoint data
@@ -172,47 +176,79 @@ def align_plant_sequence_stem_based(
             }
         )
 
-    # Stage 2: Vertical correction (if enabled)
+    # Stage 2: Manual Z-axis rotations (if specified)
+    if manual_z_rotations:
+        if verbose:
+            print(
+                f"\n  Stage 2: Applying manual Z-axis rotations to {len(manual_z_rotations)} timepoints"
+            )
+
+        for timepoint_idx, angle_deg in manual_z_rotations.items():
+            if timepoint_idx < 0 or timepoint_idx >= len(aligned_timepoints):
+                if verbose:
+                    print(
+                        f"    Warning: Skipping invalid timepoint index {timepoint_idx}"
+                    )
+                continue
+
+            curr_aligned = aligned_timepoints[timepoint_idx]
+            angle_rad = np.radians(angle_deg)
+
+            if verbose:
+                print(
+                    f"    Timepoint {timepoint_idx} (Day {curr_aligned['day']}): applying {angle_deg}° Z-rotation"
+                )
+
+            # Create Z-rotation matrix
+            cos_theta = np.cos(angle_rad)
+            sin_theta = np.sin(angle_rad)
+            z_rot = np.array(
+                [[cos_theta, -sin_theta, 0], [sin_theta, cos_theta, 0], [0, 0, 1]],
+                dtype=np.float64,
+            )
+
+            # Apply rotation to all points
+            curr_aligned["points"] = curr_aligned["points"] @ z_rot.T
+
+            # Update transformation if not reference
+            if timepoint_idx > 0:
+                # Compose with existing transformation
+                prev_rot = transformations[timepoint_idx]["rotation"]
+                total_rot = z_rot @ prev_rot
+                transformations[timepoint_idx]["rotation"] = total_rot
+                transformations[timepoint_idx]["manual_z_rotation_deg"] = angle_deg
+                transformations[timepoint_idx]["stage"] = "stage2_manual_z_rotation"
+
+    # Stage 3: Vertical correction - align lowest points to origin (if enabled)
     if vertical_correction:
+        # For reference timepoint (first), shift so its lowest point is at z=0
+        ref_min_z = np.min(aligned_timepoints[0]["points"][:, 2])
+        ref_shift = np.array([0, 0, -ref_min_z])
+        aligned_timepoints[0]["points"] = aligned_timepoints[0]["points"] + ref_shift
+        transformations[0]["vertical_shift"] = ref_shift
+        transformations[0]["stage"] = "stage3_vertical_correction"
+
+        # For all other timepoints, shift independently so each lowest point is at z=0
         for i in range(1, len(aligned_timepoints)):
             curr_aligned = aligned_timepoints[i]
-            prev_aligned = aligned_timepoints[i - 1]
 
-            # Get stem points from current and previous aligned results
-            curr_stem_mask = curr_aligned["labels"] == 0
-            curr_stem = curr_aligned["points"][curr_stem_mask]
+            # Find minimum z-coordinate (lowest point)
+            curr_min_z = np.min(curr_aligned["points"][:, 2])
 
-            prev_stem_mask = prev_aligned["labels"] == 0
-            prev_stem = prev_aligned["points"][prev_stem_mask]
-
-            if len(curr_stem) == 0 or len(prev_stem) == 0:
-                continue
-
-            # Get first X mm of stem from the base (using 1% percentile to avoid outliers)
-            curr_min_z = np.percentile(curr_stem[:, 2], 1)
-            prev_min_z = np.percentile(prev_stem[:, 2], 1)
-
-            curr_z_threshold = curr_min_z + base_height_mm
-            prev_z_threshold = prev_min_z + base_height_mm
-
-            curr_base = curr_stem[curr_stem[:, 2] <= curr_z_threshold]
-            prev_base = prev_stem[prev_stem[:, 2] <= prev_z_threshold]
-
-            if len(curr_base) < 5 or len(prev_base) < 5:
-                continue
-
-            # Compute centroids of stem base
-            curr_base_centroid = np.mean(curr_base, axis=0)
-            prev_base_centroid = np.mean(prev_base, axis=0)
-
-            # Compute vertical shift only
-            shift = prev_base_centroid - curr_base_centroid
+            # Shift to align lowest point to z=0
+            shift = np.array([0, 0, -curr_min_z])
 
             # Apply shift to current aligned points
             curr_aligned["points"] = curr_aligned["points"] + shift
 
             # Update transformation record
             transformations[i]["vertical_shift"] = shift
-            transformations[i]["stage"] = "stage2_vertical_correction"
+            # Update stage based on whether manual rotations were applied
+            if manual_z_rotations and i in manual_z_rotations:
+                transformations[i]["stage"] = "stage3_vertical_correction"
+            elif not transformations[i].get("manual_z_rotation_deg"):
+                transformations[i]["stage"] = "stage2_vertical_correction"
+            else:
+                transformations[i]["stage"] = "stage3_vertical_correction"
 
     return aligned_timepoints, transformations
