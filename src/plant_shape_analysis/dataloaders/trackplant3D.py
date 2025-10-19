@@ -20,6 +20,7 @@ class PlantSequencesDataset(Dataset):
                 "size_mb": 751,
                 "description": "TrackPlant3D v1 dataset with leaf keypoint annotations and dense point clouds",
             },
+            "orientation_corrected": False,  # Needs Y->Z correction for some crops
         },
         "v2": {
             "data_dirs": {"sparse": "gt_corrected_v2", "dense": "dense"},
@@ -30,6 +31,7 @@ class PlantSequencesDataset(Dataset):
                 "size_mb": 1200,  # Estimated (larger due to normals)
                 "description": "TrackPlant3D v2 with pre-aligned point clouds and corrected normals (faster loading)",
             },
+            "orientation_corrected": True,  # Already corrected during preprocessing
         },
     }
 
@@ -68,6 +70,7 @@ class PlantSequencesDataset(Dataset):
         # Always expect dataset at dataset_path/extract_dir
         self.dataset_path = Path(dataset_path) / extract_dir
         self.version = version
+        self.orientation_corrected = config.get("orientation_corrected", False)
 
         # Auto-download if version directory doesn't exist
         if not self.dataset_path.exists():
@@ -298,7 +301,11 @@ class PlantSequencesDataset(Dataset):
         """Get all point clouds and leaf tips for a sequence"""
         files = self._get_sequence(sequence_name)
         sequence_data = []
-        needs_correction = self._needs_orientation_correction(sequence_name)
+        # Only apply orientation correction if dataset version needs it
+        needs_correction = (
+            not self.orientation_corrected
+            and self._needs_orientation_correction(sequence_name)
+        )
 
         for file_path in files:
             # Extract day from filename
