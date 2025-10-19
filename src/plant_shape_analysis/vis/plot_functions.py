@@ -276,9 +276,9 @@ def visualize_leaf_sequence(
         if show_principal_axes:
             # Get transformation stages from leaf_timeseries
             transformation_stages = leaf_timeseries.get("transformation_stages", None)
-            basis = None
 
-            if transformation_stages is not None:
+            if transformation_stages is not None and len(transformation_stages) > 0:
+                basis = None
                 # Find PCA alignment stage (has "basis" field) and get initial basis
                 for stage_name, stage_trans in transformation_stages:
                     if stage_name == "pca_align" and stage_trans is not None:
@@ -308,39 +308,40 @@ def visualize_leaf_sequence(
 
                     basis = basis_transformed
 
-            if basis is not None:
-                arrow_origin = points.mean(axis=0)
-                arrow_origin[1] += i * spacing
-                axis_colors = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-                for j in range(3):
-                    axis_vec = basis[j]  # Row j is the j-th principal axis (now fully transformed)
-                    length = 10  # Scale for visualization
-                    arrow = o3d.geometry.TriangleMesh.create_arrow(
-                        cylinder_radius=0.3,
-                        cone_radius=0.6,
-                        cylinder_height=length * 0.8,
-                        cone_height=length * 0.2,
-                    )
-                    # Align arrow with axis_vec
-                    z_axis = np.array([0, 0, 1])
-                    axis_vec_norm = axis_vec / np.linalg.norm(axis_vec)
-                    v = np.cross(z_axis, axis_vec_norm)
-                    c = np.dot(z_axis, axis_vec_norm)
-                    if np.linalg.norm(v) < 1e-8:
-                        R = np.eye(3)
-                    else:
-                        vx = np.array(
-                            [[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]]
+                # Draw the principal axes arrows
+                if basis is not None:
+                    arrow_origin = points.mean(axis=0)
+                    arrow_origin[1] += i * spacing
+                    axis_colors = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+                    for j in range(3):
+                        axis_vec = basis[j]  # Row j is the j-th principal axis (now fully transformed)
+                        length = 10  # Scale for visualization
+                        arrow = o3d.geometry.TriangleMesh.create_arrow(
+                            cylinder_radius=0.3,
+                            cone_radius=0.6,
+                            cylinder_height=length * 0.8,
+                            cone_height=length * 0.2,
                         )
-                        R = (
-                            np.eye(3)
-                            + vx
-                            + vx @ vx * ((1 - c) / (np.linalg.norm(v) ** 2))
-                        )
-                    arrow.rotate(R, center=np.zeros(3))
-                    arrow.translate(arrow_origin)
-                    arrow.paint_uniform_color(axis_colors[j])
-                    geometries.append(arrow)
+                        # Align arrow with axis_vec
+                        z_axis = np.array([0, 0, 1])
+                        axis_vec_norm = axis_vec / np.linalg.norm(axis_vec)
+                        v = np.cross(z_axis, axis_vec_norm)
+                        c = np.dot(z_axis, axis_vec_norm)
+                        if np.linalg.norm(v) < 1e-8:
+                            R = np.eye(3)
+                        else:
+                            vx = np.array(
+                                [[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]]
+                            )
+                            R = (
+                                np.eye(3)
+                                + vx
+                                + vx @ vx * ((1 - c) / (np.linalg.norm(v) ** 2))
+                            )
+                        arrow.rotate(R, center=np.zeros(3))
+                        arrow.translate(arrow_origin)
+                        arrow.paint_uniform_color(axis_colors[j])
+                        geometries.append(arrow)
 
         # # --- Add principal axes (eigenvectors) visualization as arrows ---
         # # Compute PCA (eigenvectors of covariance)
