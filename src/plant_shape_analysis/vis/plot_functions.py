@@ -190,6 +190,7 @@ def visualize_leaf_sequence(
     yaw_angle: float = 0.0,
     look_at: Optional[np.ndarray] = None,
     window_name: str = "Leaf Growth Sequence",
+    show_normals: bool = True,
 ):
     """
     Visualize a single leaf's growth over time using Open3D
@@ -207,6 +208,7 @@ def visualize_leaf_sequence(
         yaw_angle: Rotation angle in degrees around the z-axis to orient geometries (default: 0.0)
         look_at: Optional 3D point to look at in the visualization. Passed as np.ndarray of shape (3,). If None, center based on data.
         window_name: Name for the visualization window
+        show_normals: Whether to visualize normals if available
     """
     timepoints = leaf_timeseries["timepoints"]
     if len(timepoints) < 2:
@@ -231,11 +233,13 @@ def visualize_leaf_sequence(
     R_z = None
     if yaw_angle != 0.0:
         theta = np.radians(yaw_angle)
-        R_z = np.array([
-            [np.cos(theta), -np.sin(theta), 0],
-            [np.sin(theta), np.cos(theta), 0],
-            [0, 0, 1]
-        ])
+        R_z = np.array(
+            [
+                [np.cos(theta), -np.sin(theta), 0],
+                [np.sin(theta), np.cos(theta), 0],
+                [0, 0, 1],
+            ]
+        )
 
     for i, timepoint in enumerate(timepoints):
         points = timepoint[points_key]
@@ -337,7 +341,9 @@ def visualize_leaf_sequence(
                     arrow_origin[1] += i * spacing
                     axis_colors = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
                     for j in range(3):
-                        axis_vec = basis[j]  # Row j is the j-th principal axis (now fully transformed)
+                        axis_vec = basis[
+                            j
+                        ]  # Row j is the j-th principal axis (now fully transformed)
                         length = 10  # Scale for visualization
                         arrow = o3d.geometry.TriangleMesh.create_arrow(
                             cylinder_radius=0.3,
@@ -372,7 +378,9 @@ def visualize_leaf_sequence(
                 geom.rotate(R_z, center=timepoint_center)
             # Also rotate tip_position if it exists
             if leaf_tip is not None:
-                tip_position = R_z @ (tip_position - timepoint_center) + timepoint_center
+                tip_position = (
+                    R_z @ (tip_position - timepoint_center) + timepoint_center
+                )
 
         # Track leaf tip position after rotation
         if leaf_tip is not None:
@@ -452,7 +460,7 @@ def visualize_leaf_sequence(
     o3d.visualization.draw_geometries(
         geometries,
         window_name=f"{window_name} - {leaf_timeseries['sequence_name']} Leaf {leaf_timeseries['leaf_id']}",
-        point_show_normal=True,
+        point_show_normal=show_normals,
         up=[0, 0, 1],
         front=[1, 0, 0],
         lookat=lookat_point,
@@ -473,6 +481,7 @@ def visualize_plant_sequence(
     look_at: Optional[np.ndarray] = None,
     window_name: str = "Plant Growth Sequence",
     offscreen: bool = False,
+    show_normals: bool = True,
 ):
     """
     Visualize a plant's growth over time using Open3D
@@ -493,6 +502,7 @@ def visualize_plant_sequence(
         look_at: Optional 3D point to look at in the visualization. Passed as np.ndarray of shape (3,). If None, center based on data.
         window_name: Name for the visualization window
         offscreen: If True, run visualization in offscreen mode (no GUI and save image)
+        show_normals: If True, visualize normal vectors at each point
     """
     # Handle both aligned and non-aligned data formats
     if isinstance(plant_sequence_data, dict) and "timepoints" in plant_sequence_data:
@@ -544,11 +554,13 @@ def visualize_plant_sequence(
     R_z = None
     if yaw_angle != 0.0:
         theta = np.radians(yaw_angle)
-        R_z = np.array([
-            [np.cos(theta), -np.sin(theta), 0],
-            [np.sin(theta), np.cos(theta), 0],
-            [0, 0, 1]
-        ])
+        R_z = np.array(
+            [
+                [np.cos(theta), -np.sin(theta), 0],
+                [np.sin(theta), np.cos(theta), 0],
+                [0, 0, 1],
+            ]
+        )
 
     for i, timepoint in enumerate(timepoints):
         points = timepoint.get(points_key)
@@ -613,7 +625,9 @@ def visualize_plant_sequence(
             if labels is not None:
                 tip_labels = labels[leaf_tip_idxs]
             else:
-                tip_labels = np.arange(len(tip_coords))  # Fallback to index-based matching
+                tip_labels = np.arange(
+                    len(tip_coords)
+                )  # Fallback to index-based matching
 
             for tip_coord, tip_label in zip(tip_coords, tip_labels):
                 if show_leaf_tips:
@@ -757,7 +771,7 @@ def visualize_plant_sequence(
         o3d.visualization.draw_geometries(
             geometries,
             window_name=f"{window_name} - {sequence_info}{alignment_status}",
-            point_show_normal=True,
+            point_show_normal=show_normals,
             up=[0, 0, 1],
             front=[1, 0, 0],
             lookat=lookat_point,
