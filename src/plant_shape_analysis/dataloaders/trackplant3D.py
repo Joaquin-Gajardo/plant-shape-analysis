@@ -1298,6 +1298,10 @@ class LeafSequencesDataset(Dataset):
                 # Stage 3: Align main PCA axis to Z-axis (make all leaves parallel)
                 # This aligns the leaf's main direction with the vertical axis
                 stage3_trans = self._align_pca_to_z_axis(aligned_timepoints)
+                # Reuse basis from stage 2 to avoid recomputing PCA
+                # stage3_trans = self._align_pca_to_z_axis(
+                #     aligned_timepoints, basis_from_pca=stage2_trans
+                # )
                 all_transformations.append(("align_to_z", stage3_trans))
 
                 # Stage 4: Vertical alignment - shift each timepoint so its lowest point is at z=0
@@ -1414,7 +1418,7 @@ class LeafSequencesDataset(Dataset):
 
         return R, R1
 
-    def _align_pca_to_z_axis(self, timepoints):
+    def _align_pca_to_z_axis(self, timepoints, basis_from_pca=None):
         """
         Align the main PCA axis of each timepoint to the positive Z-axis (upward).
         This makes all leaves have the same inclination (parallel to each other)
@@ -1426,6 +1430,9 @@ class LeafSequencesDataset(Dataset):
 
         Args:
             timepoints: List of aligned timepoint dictionaries (modified in-place)
+            basis_from_pca: Optional list of transformation dicts from PCA stage (stage 2)
+                          with "basis" field. If provided, reuses those basis vectors
+                          instead of recomputing PCA.
 
         Returns:
             List of transformation dictionaries for each timepoint
@@ -1436,7 +1443,7 @@ class LeafSequencesDataset(Dataset):
         target_axis = np.array([0, 0, 1])  # Z-axis
         transformations = []
 
-        for tp in timepoints:
+        for idx, tp in enumerate(timepoints):
             if tp["points"] is None or len(tp["points"]) < 3:
                 transformations.append(
                     {
@@ -1449,14 +1456,23 @@ class LeafSequencesDataset(Dataset):
                 )
                 continue
 
-            # Compute PCA on the leaf points
             points = tp["points"]
             center = np.mean(points, axis=0)
-            centered = points - center
+            centered = points - center  # Always compute centered for later rotation
 
-            # Get principal components
-            U, S, Vt = np.linalg.svd(centered, full_matrices=False)
-            main_axis = Vt[0]  # First principal component (main axis)
+            # Get main axis: either from provided basis or compute PCA
+            basis = None
+            if basis_from_pca is not None and idx < len(basis_from_pca):
+                # Try to reuse basis from stage 2 (PCA alignment)
+                basis = basis_from_pca[idx].get("basis", None)
+
+            if basis is not None:
+                # Reuse the first principal component from stage 2
+                main_axis = basis[0]  # First row is first principal component
+            else:
+                # Compute PCA from scratch
+                U, S, Vt = np.linalg.svd(centered, full_matrices=False)
+                main_axis = Vt[0]  # First principal component (main axis)
 
             # Normalize
             main_axis = main_axis / np.linalg.norm(main_axis)
