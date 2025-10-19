@@ -129,12 +129,14 @@ def visualize_mesh_open3d(filename):
 
 def create_correspondence_lines(
     correspondences: list,
+    color: Optional[np.ndarray] = None,
 ) -> Optional[o3d.geometry.LineSet]:
     """
     Create line connections between consecutive corresponding points
 
     Args:
         correspondences: List of point correspondences in time series
+        color: Optional RGB color array [R, G, B] for the lines. If None, uses gradient based on timepoint.
 
     Returns:
         Open3D LineSet or None
@@ -163,10 +165,12 @@ def create_correspondence_lines(
 
     for i in range(len(valid_points) - 1):
         lines.append([i, i + 1])
-        # Color based on timepoint progression
-        hue = valid_indices[i] / max(1, len(valid_points) - 1)
-        color = colorsys.hsv_to_rgb(hue * 0.8, 0.7, 0.8)
-        colors.append(color)
+        # Use provided color or color based on timepoint progression
+        if color is not None:
+            colors.append(color)
+        else:
+            hue = valid_indices[i] / max(1, len(valid_points) - 1)
+            colors.append(colorsys.hsv_to_rgb(hue * 0.8, 0.7, 0.8))
 
     line_set.lines = o3d.utility.Vector2iVector(lines)
     line_set.colors = o3d.utility.Vector3dVector(colors)
@@ -602,15 +606,23 @@ def visualize_plant_sequence(
         timepoint_geometries.append(pcd)
 
         # Add leaf tip visualization if available
-        timepoint_tips = []
-        if leaf_tip_idxs.size > 0 and show_leaf_tips:
+        timepoint_tips = []  # List of (organ_id, tip_coord) tuples
+        if leaf_tip_idxs.size > 0:
             tip_coords = translated_points[leaf_tip_idxs]
-            for tip_coord in tip_coords:
-                tip_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=1.5)
-                tip_sphere.translate(tip_coord)
-                tip_sphere.paint_uniform_color([1.0, 0.0, 0.0])  # Red color
-                timepoint_geometries.append(tip_sphere)
-                timepoint_tips.append(tip_coord)
+            # Get organ labels for each tip if available
+            if labels is not None:
+                tip_labels = labels[leaf_tip_idxs]
+            else:
+                tip_labels = np.arange(len(tip_coords))  # Fallback to index-based matching
+
+            for tip_coord, tip_label in zip(tip_coords, tip_labels):
+                if show_leaf_tips:
+                    tip_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=1.5)
+                    tip_sphere.translate(tip_coord)
+                    tip_sphere.paint_uniform_color([1.0, 0.0, 0.0])  # Red color
+                    timepoint_geometries.append(tip_sphere)
+                # Store as (organ_id, position) tuple
+                timepoint_tips.append((tip_label, tip_coord))
 
         # Draw principal axes from transformation basis if available
         if show_principal_axes:
@@ -661,9 +673,9 @@ def visualize_plant_sequence(
                 geom.rotate(R_z, center=timepoint_center)
             # Also rotate tip positions
             rotated_tips = []
-            for tip_coord in timepoint_tips:
+            for tip_label, tip_coord in timepoint_tips:
                 rotated_tip = R_z @ (tip_coord - timepoint_center) + timepoint_center
-                rotated_tips.append(rotated_tip)
+                rotated_tips.append((tip_label, rotated_tip))
             timepoint_tips = rotated_tips
 
         # Add to main lists
@@ -675,15 +687,36 @@ def visualize_plant_sequence(
 
     # Add connections between corresponding leaf tips if requested
     if show_connections and len(all_leaf_tips) > 1:
-        # Try to match leaf tips across timepoints (simple nearest neighbor for now)
-        for tip_idx in range(max(len(tips) for tips in all_leaf_tips)):
+        # Collect all unique organ IDs across all timepoints
+        all_organ_ids = set()
+        for timepoint_tips in all_leaf_tips:
+            for organ_id, _ in timepoint_tips:
+                all_organ_ids.add(organ_id)
+
+        # For each organ, trace its trajectory across timepoints
+        for organ_id in sorted(all_organ_ids):
             tip_trajectory = []
             for timepoint_tips in all_leaf_tips:
-                if tip_idx < len(timepoint_tips):
-                    tip_trajectory.append(timepoint_tips[tip_idx])
+                # Find the tip for this organ in this timepoint
+                tip_found = None
+                for tip_organ_id, tip_coord in timepoint_tips:
+                    if tip_organ_id == organ_id:
+                        tip_found = tip_coord
+                        break
+                # Append to trajectory (None if organ not present in this timepoint)
+                tip_trajectory.append(tip_found)
 
-            if len(tip_trajectory) > 1:
-                line_set = create_correspondence_lines(tip_trajectory)
+            # Get color for this organ
+            if organ_id < len(organ_colors):
+                line_color = organ_colors.get(organ_id, np.array([0.5, 0.5, 0.5]))
+            else:
+                # Generate color for higher leaf IDs
+                hue = ((organ_id - 1) * 0.15) % 1.0
+                line_color = np.array(colorsys.hsv_to_rgb(hue, 0.7, 0.9))
+
+            # Create line set for this organ's trajectory
+            if len([t for t in tip_trajectory if t is not None]) > 1:
+                line_set = create_correspondence_lines(tip_trajectory, color=line_color)
                 if line_set is not None:
                     geometries.append(line_set)
 
