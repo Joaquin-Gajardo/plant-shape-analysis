@@ -44,8 +44,8 @@ class PlantSequencesDataset(Dataset):
         save_transformations=False,
         estimate_normals=False,
         auto_download=True,
-        stem_alignment_verbose=False,
         manual_z_rotations=None,
+        verbose=False,
     ):
         """
         Initialize PlantSequencesDataset.
@@ -58,10 +58,10 @@ class PlantSequencesDataset(Dataset):
             save_transformations: If True, save transformation matrices when applying alignment
             estimate_normals: If True, estimate normals for all plant point clouds
             auto_download: If True, automatically download dataset if not found (default: True)
-            stem_alignment_verbose: If True, print debug information during stem alignment (default: False)
             manual_z_rotations: Dict mapping sequence_name -> {timepoint_idx: angle_deg}
                                Example: {"tobacco_control_plant1": {6: 144.0}}
             selected_sequences: Optional list of sequence names to process (default: None = all sequences)
+            verbose: If True, print debug information during stem alignment (default: False)
         """
         # Validate version and get config
         if version not in self.DATASET_CONFIGS:
@@ -100,7 +100,7 @@ class PlantSequencesDataset(Dataset):
         self.alignment_method = alignment_method
         self._save_transformations = save_transformations
         self.estimate_normals = estimate_normals
-        self.stem_alignment_verbose = stem_alignment_verbose
+        self.verbose = verbose
         self.manual_z_rotations = manual_z_rotations or {}
 
         # Set paths from config
@@ -598,9 +598,8 @@ class PlantSequencesDataset(Dataset):
             sequence_data,
             use_rotation=True,
             max_iterations=200,
-            vertical_correction=True,
             manual_z_rotations=sequence_manual_rotations,
-            verbose=self.stem_alignment_verbose,
+            verbose=self.verbose,
         )
 
         # Transform dense points and leaf tips using the same transformations

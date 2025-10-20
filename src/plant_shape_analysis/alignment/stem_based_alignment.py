@@ -97,7 +97,6 @@ def align_plant_sequence_stem_based(
     timepoints,
     use_rotation=True,
     max_iterations=200,
-    vertical_correction=True,
     manual_z_rotations=None,
     verbose=False,
 ):
@@ -106,14 +105,14 @@ def align_plant_sequence_stem_based(
 
     Multi-stage alignment approach:
     - Stage 1: Stem-based ICP alignment (rotation + translation using only stem points)
-    - Stage 2 (optional): Manual Z-axis rotations for specific timesteps
-    - Stage 3 (optional): Vertical shift correction to align lowest points to origin
+    - Stage 2: Orient stem main axis parallel to Z-direction (using lower 50% of stem points)
+    - Stage 3: Vertical shift correction to align stem base centroid to origin
+    - Stage 4 (optional): Manual Z-axis rotations for specific timesteps
 
     Args:
         timepoints: List of timepoint dictionaries with 'points' and 'labels' keys
         use_rotation: Whether to use rotation in stage 1
         max_iterations: Maximum ICP iterations for stage 1
-        vertical_correction: If True, apply vertical correction to align lowest points (stage 3)
         manual_z_rotations: Dict mapping timepoint index to rotation angle in degrees
                            Example: {6: 144.0} applies 144° rotation to timepoint 6
         verbose: If True, print debug information
@@ -176,11 +175,108 @@ def align_plant_sequence_stem_based(
             }
         )
 
-    # Stage 2: Manual Z-axis rotations (if specified)
+    # Stage 2: Orient stem main axis to Z-direction (using only lower 50% of stem points)
+    target_axis = np.array([0, 0, 1])  # Z-axis
+    for i in range(len(aligned_timepoints)):
+        points = aligned_timepoints[i]["points"]
+        labels = aligned_timepoints[i]["labels"]
+
+        # Use only stem points (label 0) to compute main axis
+        stem_mask = labels == 0
+        stem_points = points[stem_mask]
+
+        if len(stem_points) < 3:
+            # Not enough stem points, skip rotation for this timepoint
+            continue
+
+        # Use only lower 50% of stem points (more stable base, less affected by bending)
+        stem_z = stem_points[:, 2]
+        z_median = np.median(stem_z)
+        lower_stem_mask = stem_z <= z_median
+        lower_stem_points = stem_points[lower_stem_mask]
+
+        if len(lower_stem_points) < 3:
+            # Fallback to all stem points if not enough lower points
+            lower_stem_points = stem_points
+
+        # Get stem main axis via PCA
+        stem_center = np.mean(lower_stem_points, axis=0)
+        stem_centered = lower_stem_points - stem_center
+        _, _, Vt = np.linalg.svd(stem_centered, full_matrices=False)
+        main_axis = Vt[0]  # First principal component
+        main_axis = main_axis / np.linalg.norm(main_axis)
+
+        # Ensure main axis points upward
+        if np.dot(main_axis, target_axis) < 0:
+            main_axis = -main_axis
+
+        # Compute rotation to align main_axis to Z-axis
+        v = np.cross(main_axis, target_axis)
+        c = np.dot(main_axis, target_axis)
+
+        if np.abs(c - 1.0) < 1e-8:
+            # Already aligned
+            rot_matrix = np.eye(3)
+        elif np.abs(c + 1.0) < 1e-8:
+            # Opposite direction, rotate 180° around X
+            rot_matrix = np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]], dtype=np.float64)
+        else:
+            # Rodrigues' formula
+            s = np.linalg.norm(v)
+            kmat = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+            rot_matrix = np.eye(3) + kmat + kmat @ kmat * ((1 - c) / (s**2))
+
+        # Apply rotation to all points (around origin)
+        aligned_timepoints[i]["points"] = points @ rot_matrix.T
+
+        # Update transformation - compose with existing rotation from Stage 1
+        prev_rot = transformations[i]["rotation"]
+        total_rot = rot_matrix @ prev_rot
+        transformations[i]["rotation"] = total_rot
+        transformations[i]["stage"] = "stage2_orient_to_z"
+
+    # Stage 3: Vertical correction - align stem base centroid to origin
+    for i in range(len(aligned_timepoints)):
+        points = aligned_timepoints[i]["points"]
+        labels = aligned_timepoints[i]["labels"]
+
+        # Use only stem points (label 0)
+        stem_mask = labels == 0
+        stem_points = points[stem_mask]
+
+        if len(stem_points) < 3:
+            # Not enough stem points, use lowest point as fallback
+            min_z = np.min(points[:, 2])
+            shift = np.array([0, 0, -min_z])
+        else:
+            # Use lowest 10% of stem points to define base layer
+            stem_z = stem_points[:, 2]
+            z_percentile_10 = np.percentile(stem_z, 10)
+            base_mask = stem_z <= z_percentile_10
+            base_stem_points = stem_points[base_mask]
+
+            if len(base_stem_points) < 1:
+                # Fallback to lowest point
+                min_z = np.min(stem_z)
+                shift = np.array([0, 0, -min_z])
+            else:
+                # Compute centroid of base layer
+                base_centroid = np.mean(base_stem_points, axis=0)
+                # Shift to align base centroid to XY plane (z=0)
+                shift = np.array([0, 0, -base_centroid[2]])
+
+        # Apply shift to all points
+        aligned_timepoints[i]["points"] = points + shift
+
+        # Update transformation record
+        transformations[i]["vertical_shift"] = shift
+        transformations[i]["stage"] = "stage3_vertical_correction"
+
+    # Stage 4: Manual Z-axis rotations (if specified)
     if manual_z_rotations:
         if verbose:
             print(
-                f"\n  Stage 2: Applying manual Z-axis rotations to {len(manual_z_rotations)} timepoints"
+                f"\n  Stage 4: Applying manual Z-axis rotations to {len(manual_z_rotations)} timepoints"
             )
 
         for timepoint_idx, angle_deg in manual_z_rotations.items():
@@ -217,38 +313,6 @@ def align_plant_sequence_stem_based(
                 total_rot = z_rot @ prev_rot
                 transformations[timepoint_idx]["rotation"] = total_rot
                 transformations[timepoint_idx]["manual_z_rotation_deg"] = angle_deg
-                transformations[timepoint_idx]["stage"] = "stage2_manual_z_rotation"
-
-    # Stage 3: Vertical correction - align lowest points to origin (if enabled)
-    if vertical_correction:
-        # For reference timepoint (first), shift so its lowest point is at z=0
-        ref_min_z = np.min(aligned_timepoints[0]["points"][:, 2])
-        ref_shift = np.array([0, 0, -ref_min_z])
-        aligned_timepoints[0]["points"] = aligned_timepoints[0]["points"] + ref_shift
-        transformations[0]["vertical_shift"] = ref_shift
-        transformations[0]["stage"] = "stage3_vertical_correction"
-
-        # For all other timepoints, shift independently so each lowest point is at z=0
-        for i in range(1, len(aligned_timepoints)):
-            curr_aligned = aligned_timepoints[i]
-
-            # Find minimum z-coordinate (lowest point)
-            curr_min_z = np.min(curr_aligned["points"][:, 2])
-
-            # Shift to align lowest point to z=0
-            shift = np.array([0, 0, -curr_min_z])
-
-            # Apply shift to current aligned points
-            curr_aligned["points"] = curr_aligned["points"] + shift
-
-            # Update transformation record
-            transformations[i]["vertical_shift"] = shift
-            # Update stage based on whether manual rotations were applied
-            if manual_z_rotations and i in manual_z_rotations:
-                transformations[i]["stage"] = "stage3_vertical_correction"
-            elif not transformations[i].get("manual_z_rotation_deg"):
-                transformations[i]["stage"] = "stage2_vertical_correction"
-            else:
-                transformations[i]["stage"] = "stage3_vertical_correction"
+                transformations[timepoint_idx]["stage"] = "stage4_manual_z_rotation"
 
     return aligned_timepoints, transformations
