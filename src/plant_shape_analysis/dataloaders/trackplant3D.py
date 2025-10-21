@@ -31,7 +31,7 @@ class PlantSequencesDataset(Dataset):
                 "size_mb": 1200,  # Estimated (larger due to normals)
                 "description": "TrackPlant3D v2 with pre-aligned point clouds and corrected normals (faster loading)",
             },
-            "orientation_corrected": True,  # Already corrected during preprocessing
+            "orientation_corrected": False,  # True if TXT or PLY files have Y→Z rotation applied during preprocessing, set to False when loading raw data in TXT format
         },
     }
 
@@ -62,6 +62,13 @@ class PlantSequencesDataset(Dataset):
                                Example: {"tobacco_control_plant1": {6: 144.0}}
             selected_sequences: Optional list of sequence names to process (default: None = all sequences)
             verbose: If True, print debug information during stem alignment (default: False)
+
+        Important:
+            When using 'stem_based' alignment with TXT files from the original dataset (v1 or custom versions),
+            ensure that orientation_corrected=False in the version config. The stem-based alignment expects
+            Z-axis to be the vertical axis. For crops like tobacco, tomato1, and sorghum that originally use
+            Y-axis as vertical, orientation correction must be applied BEFORE stem alignment to avoid plants
+            appearing upside down. The v1 config has orientation_corrected=False by default.
         """
         # Validate version and get config
         if version not in self.DATASET_CONFIGS:
@@ -122,6 +129,20 @@ class PlantSequencesDataset(Dataset):
 
         # Initialize transformations dictionary (populated if alignment is applied)
         self.transformations = {}
+
+        # Check for problematic configuration: stem_based alignment with TXT files and orientation_corrected=True
+        if (
+            self.alignment_method == "stem_based"
+            and self.orientation_corrected
+            and not self.use_ply
+        ):
+            raise ValueError(
+                f"Invalid configuration: stem_based alignment with orientation_corrected=True and use_ply=False.\n"
+                f"The stem-based alignment expects Z-axis to be vertical, but TXT files for tobacco, tomato1, "
+                f"and sorghum use Y-axis in the original data.\n"
+                f"Solution: Set orientation_corrected=False in the DATASET_CONFIGS['{version}'] configuration,"
+                f"or ensure your TXT data has been geometrically corrected (Y→Z rotation applied) during preprocessing."
+            )
 
         # Apply alignment if requested
         if self.alignment_method is not None:
