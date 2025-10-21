@@ -31,7 +31,7 @@ class PlantSequencesDataset(Dataset):
                 "size_mb": 1200,  # Estimated (larger due to normals)
                 "description": "TrackPlant3D v2 with pre-aligned point clouds and corrected normals (faster loading)",
             },
-            "orientation_corrected": False,  # True if TXT or PLY files have Y→Z rotation applied during preprocessing, set to False when loading raw data in TXT format
+            "orientation_corrected": False,  # NOTE: change to True if uploaded TXT or PLY files have Y→Z rotation applied during preprocessing, set to False when loading raw data in TXT format
         },
     }
 
@@ -153,6 +153,8 @@ class PlantSequencesDataset(Dataset):
 
         # Estimate normals if requested
         if self.estimate_normals:
+            # Done after alignment since we don't use them for alignment
+            # like in leaves, and to avoid extra computation to rotate them
             self._estimate_normals()
 
     def _organize_sequences(self):
@@ -452,7 +454,7 @@ class PlantSequencesDataset(Dataset):
 
         return R, R1
 
-    def align_plant_sequence(self, sequence_name, reference_idx=0, method=None):
+    def align_plant_sequence(self, sequence_data, reference_idx=0, method=None):
         """
         Align plant sequence using PCA, ICP, or stem-based registration.
         Preserves scale differences to show growth over time.
@@ -461,7 +463,7 @@ class PlantSequencesDataset(Dataset):
         Ensures consistent orientation across all timepoints.
 
         Args:
-            sequence_name: Name of the sequence to align
+            sequence_data: List of timepoint dictionaries with 'points', 'labels', etc.
             reference_idx: Index of reference timepoint (default: 0, ignored for stem_based)
             method: Alignment method - 'pca', 'icp', or 'stem_based'. If None, uses self.alignment_method
 
@@ -472,9 +474,8 @@ class PlantSequencesDataset(Dataset):
 
         # Stem-based alignment uses sequential approach
         if method == "stem_based":
-            return self._align_stem_based(sequence_name)
+            return self._align_stem_based(sequence_data)
 
-        sequence_data = self.get_sequence_data(sequence_name)
         if len(sequence_data) < 2:
             return sequence_data, []
 
@@ -589,7 +590,7 @@ class PlantSequencesDataset(Dataset):
 
         return aligned_sequence, transformations
 
-    def _align_stem_based(self, sequence_name):
+    def _align_stem_based(self, sequence_data, sequence_name=None):
         """
         Align plant sequence using stem-based ICP with vertical correction.
 
@@ -598,7 +599,8 @@ class PlantSequencesDataset(Dataset):
         - Stage 2: Vertical shift correction using stem base centroid
 
         Args:
-            sequence_name: Name of the sequence to align
+            sequence_data: List of timepoint dictionaries with 'points', 'labels', etc.
+            sequence_name: Optional sequence name for manual Z-rotation lookup
 
         Returns:
             List of aligned timepoint data and transformation matrices
@@ -607,12 +609,13 @@ class PlantSequencesDataset(Dataset):
             align_plant_sequence_stem_based,
         )
 
-        sequence_data = self.get_sequence_data(sequence_name)
         if len(sequence_data) < 2:
             return sequence_data, []
 
         # Get manual Z-rotations for this sequence (if any)
-        sequence_manual_rotations = self.manual_z_rotations.get(sequence_name, None)
+        sequence_manual_rotations = None
+        if sequence_name is not None:
+            sequence_manual_rotations = self.manual_z_rotations.get(sequence_name, None)
 
         # Run stem-based alignment
         aligned_timepoints, transformations = align_plant_sequence_stem_based(
@@ -713,9 +716,16 @@ class PlantSequencesDataset(Dataset):
 
             if len(timepoints) >= 2:
                 # Apply alignment with first timepoint as reference
-                aligned_data, transformations = self.align_plant_sequence(
-                    sequence_name, reference_idx=0, method=self.alignment_method
-                )
+                # Pass timepoints data directly to avoid reloading from files
+                if self.alignment_method == "stem_based":
+                    # Stem-based needs sequence_name for manual Z-rotations
+                    aligned_data, transformations = self._align_stem_based(
+                        timepoints, sequence_name=sequence_name
+                    )
+                else:
+                    aligned_data, transformations = self.align_plant_sequence(
+                        timepoints, reference_idx=0, method=self.alignment_method
+                    )
 
                 # Update the timeseries with aligned data
                 aligned_plant_ts = plant_ts.copy()
