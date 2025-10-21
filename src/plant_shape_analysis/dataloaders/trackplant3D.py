@@ -31,7 +31,7 @@ class PlantSequencesDataset(Dataset):
                 "size_mb": 1200,  # Estimated (larger due to normals)
                 "description": "TrackPlant3D v2 with pre-aligned point clouds and corrected normals (faster loading)",
             },
-            "orientation_corrected": False,  # NOTE: change to True if uploaded TXT or PLY files have Y→Z rotation applied during preprocessing, set to False when loading raw data in TXT format
+            "orientation_corrected": True,  # NOTE: change to True if uploaded TXT or PLY files have Y→Z rotation applied during preprocessing, set to False when loading raw data in TXT format
         },
     }
 
@@ -1407,14 +1407,14 @@ class LeafSequencesDataset(Dataset):
             if len(leaf_ts["timepoints"]) >= 2:
                 all_transformations = []
 
-                # Stage 0: Pre-align rotation using leaf tips BEFORE everything else
-                # This roughly aligns the leaves so the rest of the pipeline works better
-                # In edge cases such as wilting or decaying leaves
-                if leaf_ts["timepoints"][0].get("leaf_tip") is not None:
-                    stage0_trans = self._prealign_with_leaf_tips(leaf_ts["timepoints"])
-                    all_transformations.append(("prealign_tip", stage0_trans))
-                else:
-                    all_transformations.append(("prealign_tip", None))
+                # # Stage 0: Pre-align rotation using leaf tips BEFORE everything else
+                # # This roughly aligns the leaves so the rest of the pipeline works better
+                # # In edge cases such as wilting or decaying leaves
+                # if leaf_ts["timepoints"][0].get("leaf_tip") is not None:
+                #     stage0_trans = self._prealign_with_leaf_tips(leaf_ts["timepoints"])
+                #     all_transformations.append(("prealign_tip", stage0_trans))
+                # else:
+                #     all_transformations.append(("prealign_tip", None))
 
                 # Stage 1: Enforce temporal normal consistency
                 # This ensures all normals point to the same face (inner/outer) consistently

@@ -19,10 +19,7 @@ import numpy as np
 import open3d as o3d
 from tqdm import tqdm
 
-from plant_shape_analysis.dataloaders.trackplant3D import (
-    LeafSequencesDataset,
-    PlantSequencesDataset,
-)
+from plant_shape_analysis.dataloaders.trackplant3D import LeafSequencesDataset
 
 
 def map_leaf_normals_to_plant(plant_timeseries, leaf_dataset):
@@ -90,7 +87,9 @@ def map_leaf_normals_to_plant(plant_timeseries, leaf_dataset):
 
                 if leaf_tp_idx < len(composed_transforms):
                     # Get inverse transformation matrix
-                    composed_matrix = composed_transforms[leaf_tp_idx]["composed_matrix"]
+                    composed_matrix = composed_transforms[leaf_tp_idx][
+                        "composed_matrix"
+                    ]
                     inv_matrix = LeafSequencesDataset.invert_transformation(
                         composed_matrix
                     )
@@ -125,7 +124,12 @@ def map_leaf_normals_to_plant(plant_timeseries, leaf_dataset):
 
 
 def save_as_ply(
-    points, labels, leaf_tip_idxs, normals=None, output_path=None, include_leaf_tips=True
+    points,
+    labels,
+    leaf_tip_idxs,
+    normals=None,
+    output_path=None,
+    include_leaf_tips=True,
 ):
     """
     Save point cloud with labels, normals, and leaf tips as PLY file.
@@ -277,7 +281,9 @@ def main():
     # Step 1: Create leaf dataset to get corrected normals
     # This internally creates plant_dataset with alignment and normals
     print("Step 1/2: Creating leaf dataset to compute corrected normals...")
-    print("  (This loads plants with alignment and estimates temporally consistent normals)")
+    print(
+        "  (This loads plants with alignment and estimates temporally consistent normals)"
+    )
     leaf_dataset = LeafSequencesDataset(
         dataset_path,
         version="v1",
@@ -285,7 +291,7 @@ def main():
         plant_alignment_method=args.alignment_method,
         estimate_plant_normals=True,  # Estimate normals for plants
         apply_alignment=True,  # Apply leaf alignment to correct normals
-        save_transformations=False,
+        save_transformations=True,
     )
 
     # Access the plant dataset from leaf_dataset
@@ -307,7 +313,9 @@ def main():
     else:
         sequences_to_process = plant_dataset.get_sequence_names()
 
-    print(f"\nStep 2/2: Processing and saving {len(sequences_to_process)} sequence(s)...")
+    print(
+        f"\nStep 2/2: Processing and saving {len(sequences_to_process)} sequence(s)..."
+    )
 
     # Create output directories
     gt_corrected_dir = output_base_dir / "gt_corrected_v2"
@@ -381,7 +389,9 @@ def main():
     if args.save_dense:
         print(f"  Dense point clouds: {dense_dir}")
     print("\nNow you can load v2 with:")
-    print('  PlantSequencesDataset(dataset_path, version="v2", alignment_method=None, estimate_normals=False)')
+    print(
+        '  PlantSequencesDataset(dataset_path, version="v2", alignment_method=None, estimate_normals=False)'
+    )
 
 
 if __name__ == "__main__":
