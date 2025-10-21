@@ -1317,86 +1317,74 @@ class LeafSequencesDataset(Dataset):
 
         return transformations
 
-    def _enforce_temporal_normal_consistency(self, timepoints):
+    def _enforce_downward_facing_normals(self, timepoints):
         """
-        Enforce temporal consistency of normals across timepoints for a leaf sequence.
-        Uses sequential propagation: compares each timepoint to the previous one.
-        This ensures normals point in the same direction over time.
+        Enforce that all leaf normals point downward (negative Z-component).
+        This uses the fact that plants are vertically aligned (Z-axis up) and
+        ensures normals represent the outer/abaxial (downward-facing) leaf surface.
+
+        This simple approach replaces complex temporal consistency checks by fixing
+        the fundamental orientation issue at the source, before any alignment.
 
         Args:
-            timepoints: List of timepoint dictionaries containing 'points' and 'normals'
+            timepoints: List of timepoint dictionaries containing 'normals'
+
+        Returns:
+            List of transformation dictionaries (for consistency with other stages)
         """
-        if len(timepoints) < 2:
-            return
+        transformations = []
 
-        # Check if first timepoint has normals
-        if "normals" not in timepoints[0] or timepoints[0]["normals"] is None:
-            return
-
-        # Sequential propagation: compare each timepoint to the previous one
-        from scipy.spatial import cKDTree
-
-        for i in range(1, len(timepoints)):
-            prev_tp = timepoints[i - 1]  # Previous timepoint as reference
-            curr_tp = timepoints[i]
-
-            if "normals" not in curr_tp or curr_tp["normals"] is None:
+        for tp in timepoints:
+            if tp.get("normals") is None:
+                transformations.append(
+                    {
+                        "stage": "enforce_downward_normals",
+                        "day": tp["day"],
+                        "flipped": False,
+                    }
+                )
                 continue
 
-            prev_points = prev_tp["points"]
-            prev_normals = prev_tp["normals"]
+            normals = tp["normals"]
 
-            curr_points = curr_tp["points"]
-            curr_normals = curr_tp["normals"]
+            # Compute mean Z-component of normals
+            mean_z = np.mean(normals[:, 2])
 
-            # Build KD-tree for previous points
-            prev_tree = cKDTree(prev_points)
+            # If pointing upward (positive Z), flip all normals
+            if mean_z > 0:
+                tp["normals"] = -normals
+                flipped = True
+            else:
+                flipped = False
 
-            # Find nearest neighbors in previous frame
-            distances, indices = prev_tree.query(curr_points, k=1)
+            transformations.append(
+                {
+                    "stage": "enforce_downward_normals",
+                    "day": tp["day"],
+                    "flipped": flipped,
+                    "mean_z_before": mean_z,
+                    "mean_z_after": -mean_z if flipped else mean_z,
+                }
+            )
 
-            # For each point, check if normal should be flipped
-            matched_prev_normals = prev_normals[indices]
-
-            # Compute dot product between current and previous normals
-            dot_products = np.sum(curr_normals * matched_prev_normals, axis=1)
-
-            # Use majority voting: if most normals point in wrong direction, flip ALL
-            # Only consider points with close matches (within reasonable distance)
-            max_distance = np.percentile(
-                distances, 75
-            )  # Use 75th percentile as threshold
-            reliable_matches = distances < max_distance
-
-            if np.any(reliable_matches):
-                avg_dot_product = np.mean(dot_products[reliable_matches])
-
-                # If average dot product is negative, flip ALL normals
-                if avg_dot_product < 0:
-                    curr_normals = -curr_normals
-
-            # Update normals in timepoint
-            curr_tp["normals"] = curr_normals
-        return timepoints
+        return transformations
 
     def _align_dataset(self):
         """
         Apply PCA-based alignment to all leaf sequences in the dataset.
 
-        Multi-stage approach:
-        0. Pre-align rotation using leaf tips (on original unaligned data)
-           - Uses leaf tip direction to roughly align Y-rotation before other processing
-           - Critical for decaying/problematic leaves where normals might not be reliable
-        1. Fix temporal normal consistency (on pre-aligned data)
-           - Uses sequential propagation with nearest neighbor matching
-           - Ensures normals point to same face consistently across time
-        2. Apply PCA alignment with orientation corrections (using corrected normals)
+        New streamlined approach (uses plant vertical alignment):
+        0. Enforce downward-facing normals (on unaligned data)
+           - Uses plant's vertical alignment (Z-axis up)
+           - Ensures all leaf normals point downward (outer/abaxial face)
+           - Fixes both temporal consistency and face orientation at the root
+        1. Apply PCA alignment with normal-aware Z-rotation
            - Sequential alignment: each timepoint aligned to previous one
            - Z-axis rotation: computes optimal angle based on normal directions
-        3. Align main PCA axis to Z-axis
+        2. Align main PCA axis to Z-axis
            - Rotates each leaf so its main axis is parallel to Z-axis
            - Makes all leaves have the same inclination for easy comparison
-        4. Vertical alignment to z=0 plane
+        3. Vertical alignment to z=0 plane
            - Shifts each timepoint independently so its lowest point is at z=0
         """
 
@@ -1407,38 +1395,28 @@ class LeafSequencesDataset(Dataset):
             if len(leaf_ts["timepoints"]) >= 2:
                 all_transformations = []
 
-                # # Stage 0: Pre-align rotation using leaf tips BEFORE everything else
-                # # This roughly aligns the leaves so the rest of the pipeline works better
-                # # In edge cases such as wilting or decaying leaves
-                # if leaf_ts["timepoints"][0].get("leaf_tip") is not None:
-                #     stage0_trans = self._prealign_with_leaf_tips(leaf_ts["timepoints"])
-                #     all_transformations.append(("prealign_tip", stage0_trans))
-                # else:
-                #     all_transformations.append(("prealign_tip", None))
-
-                # Stage 1: Enforce temporal normal consistency
-                # This ensures all normals point to the same face (inner/outer) consistently
+                # Stage 0: Enforce downward-facing normals (Z < 0)
+                # This uses the fact that plants are vertically aligned (Z-axis up)
+                # and ensures temporal consistency + correct face orientation
                 if leaf_ts["timepoints"][0].get("normals") is not None:
-                    self._enforce_temporal_normal_consistency(leaf_ts["timepoints"])
-                # Note: Normal consistency doesn't change geometry, only flips normal vectors
+                    stage0_trans = self._enforce_downward_facing_normals(leaf_ts["timepoints"])
+                    all_transformations.append(("enforce_downward_normals", stage0_trans))
+                else:
+                    all_transformations.append(("enforce_downward_normals", None))
 
-                # Stage 2: Apply PCA alignment with normal-aware Z-rotation
+                # Stage 1: Apply PCA alignment with normal-aware Z-rotation
                 # Now the alignment can use the corrected normals to determine proper orientation
-                aligned_timepoints, stage2_trans = self.align_leaf_sequence(leaf_ts)
-                all_transformations.append(("pca_align", stage2_trans))
+                aligned_timepoints, stage1_trans = self.align_leaf_sequence(leaf_ts)
+                all_transformations.append(("pca_align", stage1_trans))
 
-                # Stage 3: Align main PCA axis to Z-axis (make all leaves parallel)
+                # Stage 2: Align main PCA axis to Z-axis (make all leaves parallel)
                 # This aligns the leaf's main direction with the vertical axis
-                stage3_trans = self._align_pca_to_z_axis(aligned_timepoints)
-                # Reuse basis from stage 2 to avoid recomputing PCA
-                # stage3_trans = self._align_pca_to_z_axis(
-                #     aligned_timepoints, basis_from_pca=stage2_trans
-                # )
-                all_transformations.append(("align_to_z", stage3_trans))
+                stage2_trans = self._align_pca_to_z_axis(aligned_timepoints)
+                all_transformations.append(("align_to_z", stage2_trans))
 
-                # Stage 4: Vertical alignment - shift each timepoint so its lowest point is at z=0
-                stage4_trans = self._align_leaves_to_xy_plane(aligned_timepoints)
-                all_transformations.append(("vertical_align", stage4_trans))
+                # Stage 3: Vertical alignment - shift each timepoint so its lowest point is at z=0
+                stage3_trans = self._align_leaves_to_xy_plane(aligned_timepoints)
+                all_transformations.append(("vertical_align", stage3_trans))
 
                 # Update the leaf timeseries with aligned data
                 aligned_leaf_ts = leaf_ts.copy()
@@ -1970,13 +1948,20 @@ class LeafSequencesDataset(Dataset):
                     continue
 
                 trans_info = stage_trans[tp_idx]
-                R = trans_info["rotation"]
-                t = trans_info["translation"]
-                c = trans_info["center"]
 
                 # Extract day from first non-None stage
                 if day is None and "day" in trans_info:
                     day = trans_info["day"]
+
+                # Skip stages that only affect normals (not geometry)
+                # e.g., enforce_downward_normals only flips normal vectors
+                if stage_name == "enforce_downward_normals":
+                    # This stage doesn't change point positions, skip for composed matrix
+                    continue
+
+                R = trans_info["rotation"]
+                t = trans_info["translation"]
+                c = trans_info["center"]
 
                 # Build 4x4 transformation matrix for this stage
                 # Transform is: p' = (p - c) @ R.T + c + t
@@ -2061,7 +2046,7 @@ class LeafSequencesDataset(Dataset):
         """
         Apply inverse transformations to aligned leaf sequence to reconstruct original positions.
 
-        This reverses all alignment stages (tip pre-alignment, PCA, align to Z, vertical shift)
+        This reverses all alignment stages (downward normals, PCA, align to Z, vertical shift)
         to place the leaf back in its original plant coordinate space.
 
         Args:
@@ -2071,11 +2056,11 @@ class LeafSequencesDataset(Dataset):
         Returns:
             List of timepoint dicts with points in original (unaligned) space
         """
-        # Compose all transformation stages
+        # Compose all transformation stages (skips normal-only stages)
         composed = LeafSequencesDataset.compose_transformations(transformation_stages)
 
         original_timepoints = []
-        for tp, comp in zip(leaf_timeseries["timepoints"], composed):
+        for tp_idx, (tp, comp) in enumerate(zip(leaf_timeseries["timepoints"], composed)):
             # Get inverse matrix (aligned -> original)
             inv_matrix = LeafSequencesDataset.invert_transformation(
                 comp["composed_matrix"]
@@ -2104,10 +2089,21 @@ class LeafSequencesDataset(Dataset):
                 )[0]
 
             # Note: Normals are direction vectors, need rotation-only transform
+            # PLUS we need to reverse the downward-facing flip if it was applied
             if tp.get("normals") is not None:
                 # Extract rotation part of inverse (upper-left 3x3)
                 R_inv = inv_matrix[:3, :3]
-                original_tp["normals"] = tp["normals"] @ R_inv.T
+                normals = tp["normals"] @ R_inv.T
+
+                # Check if downward normals stage flipped the normals
+                for stage_name, stage_trans in transformation_stages:
+                    if stage_name == "enforce_downward_normals" and stage_trans is not None:
+                        if stage_trans[tp_idx].get("flipped", False):
+                            # Reverse the flip
+                            normals = -normals
+                        break
+
+                original_tp["normals"] = normals
 
             original_timepoints.append(original_tp)
 
