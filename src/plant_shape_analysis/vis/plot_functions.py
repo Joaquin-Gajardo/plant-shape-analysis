@@ -191,6 +191,7 @@ def visualize_leaf_sequence(
     look_at: Optional[np.ndarray] = None,
     window_name: str = "Leaf Growth Sequence",
     show_normals: bool = True,
+    leaf_tip_radius: float = 0.5,
 ):
     """
     Visualize a single leaf's growth over time using Open3D
@@ -209,10 +210,62 @@ def visualize_leaf_sequence(
         look_at: Optional 3D point to look at in the visualization. Passed as np.ndarray of shape (3,). If None, center based on data.
         window_name: Name for the visualization window
         show_normals: Whether to visualize normals if available
+        leaf_tip_radius: Radius of the sphere used to visualize leaf tips
     """
     timepoints = leaf_timeseries["timepoints"]
-    if len(timepoints) < 2:
-        print("At least two timepoints are needed for visualization")
+    if len(timepoints) < 1:
+        print("At least one timepoint is needed for visualization")
+        return
+
+    # Handle single timepoint case
+    if len(timepoints) == 1:
+        print(f"Single timepoint leaf - visualizing as single point cloud")
+        tp = timepoints[0]
+        points = tp.get("dense_points" if dense_points else "points")
+        normals = tp.get("normals")
+
+        if points is None:
+            print("No points available for visualization")
+            return
+
+        geometries = []
+
+        # Create point cloud
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(points)
+
+        # Add normals if available
+        if normals is not None and show_normals:
+            scaled_normals = normals * normals_scale
+            pcd.normals = o3d.utility.Vector3dVector(scaled_normals)
+
+        # Color green for single timepoint
+        pcd.paint_uniform_color([0.2, 0.8, 0.2])
+        geometries.append(pcd)
+
+        # Add leaf tip if available
+        if show_leaf_tips and tp.get("leaf_tip") is not None:
+            sphere = o3d.geometry.TriangleMesh.create_sphere(radius=2.0)
+            sphere.paint_uniform_color([1, 0, 0])
+            sphere.translate(tp["leaf_tip"])
+            geometries.append(sphere)
+
+        # Add coordinate frame
+        if show_coordinate_frame:
+            coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
+                size=20.0, origin=[0, 0, 0]
+            )
+            geometries.append(coord_frame)
+
+        # Visualize
+        o3d.visualization.draw_geometries(
+            geometries,
+            window_name=window_name,
+            point_show_normal=show_normals and normals is not None,
+            up=[0, 0, 1],
+            front=[1, 0, 0],
+            lookat=points.mean(axis=0) if look_at is None else look_at,
+        )
         return
 
     # Generate colors for each timepoint using HSV colorspace
@@ -290,7 +343,9 @@ def visualize_leaf_sequence(
 
             # Add leaf tip sphere
             if show_leaf_tips:
-                tip_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=1.0)
+                tip_sphere = o3d.geometry.TriangleMesh.create_sphere(
+                    radius=leaf_tip_radius
+                )
                 tip_sphere.translate(tip_position)
                 tip_sphere.paint_uniform_color([1.0, 0.0, 0.0])  # Red color
                 timepoint_geometries.append(tip_sphere)
@@ -482,6 +537,7 @@ def visualize_plant_sequence(
     window_name: str = "Plant Growth Sequence",
     offscreen: bool = False,
     show_normals: bool = True,
+    leaf_tip_radius: float = 1.0,
 ):
     """
     Visualize a plant's growth over time using Open3D
@@ -503,6 +559,7 @@ def visualize_plant_sequence(
         window_name: Name for the visualization window
         offscreen: If True, run visualization in offscreen mode (no GUI and save image)
         show_normals: If True, visualize normal vectors at each point
+        leaf_tip_radius: Radius of the sphere used to visualize leaf tips
     """
     # Handle both aligned and non-aligned data formats
     if isinstance(plant_sequence_data, dict) and "timepoints" in plant_sequence_data:
@@ -631,7 +688,9 @@ def visualize_plant_sequence(
 
             for tip_coord, tip_label in zip(tip_coords, tip_labels):
                 if show_leaf_tips:
-                    tip_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=1.5)
+                    tip_sphere = o3d.geometry.TriangleMesh.create_sphere(
+                        radius=leaf_tip_radius
+                    )
                     tip_sphere.translate(tip_coord)
                     tip_sphere.paint_uniform_color([1.0, 0.0, 0.0])  # Red color
                     timepoint_geometries.append(tip_sphere)
