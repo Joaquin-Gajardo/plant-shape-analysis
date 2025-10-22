@@ -23,15 +23,15 @@ class PlantSequencesDataset(Dataset):
             "orientation_corrected": False,  # Needs Y->Z correction for some crops
         },
         "v2": {
-            "data_dirs": {"sparse": "gt_corrected_v2", "dense": "dense"},
+            "data_dirs": {"sparse": "gt_corrected_v2", "dense": None},
             "download_info": {
-                "url": "https://polybox.ethz.ch/index.php/s/7XwferiX92aogn5",
+                "url": "https://polybox.ethz.ch/index.php/s/7XwferiX92aogn5/download",
                 "filename": "v2.zip",
                 "extract_dir": "v2",
                 "size_mb": 130,
                 "description": "TrackPlant3D v2 with pre-aligned point clouds and corrected normals (faster loading)",
             },
-            "orientation_corrected": True,  # NOTE: change to True if uploaded TXT or PLY files have Y→Z rotation applied during preprocessing, set to False when loading raw data in TXT format
+            "orientation_corrected": True,  # PLY files have been corrected Y→Z rotation for some sequences during preprocessing, set to False when loading raw data in TXT format
         },
     }
 
@@ -112,7 +112,9 @@ class PlantSequencesDataset(Dataset):
 
         # Set paths from config
         self.sparse_path = self.dataset_path / data_dirs["sparse"]
-        self.dense_path = self.dataset_path / data_dirs["dense"]
+        self.dense_path = (
+            self.dataset_path / data_dirs["dense"] if data_dirs["dense"] else None
+        )
 
         # This is only used when using txt files, as PLY files have leaf tips as a scalar field (sparse ones)
         self.leaf_tips_path = self.dataset_path / "keypoints" / "leaf_tips"
@@ -270,6 +272,8 @@ class PlantSequencesDataset(Dataset):
 
     def load_dense_point_cloud(self, file_path):
         """Load dense point cloud for a specific sequence and day if available"""
+        if self.dense_path is None:
+            return None, None, None
         crop_name = file_path.parent.name
         dense_file_path = self.dense_path / crop_name / file_path.name
         if dense_file_path.exists():

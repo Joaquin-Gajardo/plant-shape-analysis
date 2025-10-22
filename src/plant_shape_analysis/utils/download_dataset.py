@@ -34,7 +34,7 @@ def _get_dataset_config(version: str):
         "extract_dir": config["download_info"]["extract_dir"],
         "size_mb": config["download_info"]["size_mb"],
         "description": config["download_info"]["description"],
-        "expected_dirs": list(config["data_dirs"].values()),
+        "expected_dirs": [d for d in config["data_dirs"].values() if d is not None],
     }
 
 

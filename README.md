@@ -57,7 +57,7 @@ The TrackPlant3D dataset (Li et al., COMPAG 2024) dataset contains 3D point clou
 #### Download dataset
 We provide a processed version, with leaf keypoint annotations, cleaned segmentations and matched dense point clouds, available in the following [link](https://polybox.ethz.ch/index.php/apps/files/files/4247413277?dir=/Share/datasets/TrackPlant3D). Please cite the original datasets if you use this dataset (see README within the dataset).
 
-**Automatic download:** The dataset will be downloaded automatically when you first use the dataloader if not found (751 MB).
+**Automatic download:** The dataset will be downloaded automatically when you first use the dataloader if not found (130 MB).
 
 ```python
 from plant_shape_analysis import PlantSequencesDataset
