@@ -961,6 +961,7 @@ class LeafSequencesDataset(Dataset):
         use_ply: bool = False,
         save_transformations: bool = False,
         auto_download: bool = True,
+        manual_z_rotations: Optional[dict] = None,
     ):
         """
         Initialize LeafSequencesDataset.
@@ -977,6 +978,8 @@ class LeafSequencesDataset(Dataset):
             use_ply: If True, load from PLY files instead of TXT files
             save_transformations: If True, save transformation matrices when applying alignment
             auto_download: If True, automatically download dataset if not found (default: True)
+            manual_z_rotations: Dict mapping sequence_name -> {timepoint_idx: angle_deg}
+                               for manual Z-axis rotations (passed to PlantSequencesDataset)
         """
         self.plant_dataset = PlantSequencesDataset(
             dataset_path,
@@ -985,17 +988,7 @@ class LeafSequencesDataset(Dataset):
             alignment_method=plant_alignment_method,
             estimate_normals=estimate_plant_normals,
             auto_download=auto_download,
-            manual_z_rotations={
-                "tobacco_control_plant1": {6: -146.0},
-                "tobacco_shade_plant3": {
-                    3: -89,
-                    2: -89 + 150,
-                    1: -89 + 150 + 142,
-                    0: -89 + 150 + 142 - 90,
-                },
-                # Obtained in notebook 8, need to accumulate angles carefully
-                # since we obtained them by comparing to previous UNADJUSTED timestep
-            },
+            manual_z_rotations=manual_z_rotations,
         )
         self.dataset_path = Path(dataset_path)
         self.min_timepoints = min_timepoints
