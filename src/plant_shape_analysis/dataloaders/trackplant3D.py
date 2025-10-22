@@ -1398,11 +1398,11 @@ class LeafSequencesDataset(Dataset):
                 # Stage 0: Enforce downward-facing normals (Z < 0)
                 # This uses the fact that plants are vertically aligned (Z-axis up)
                 # and ensures temporal consistency + correct face orientation
-                if leaf_ts["timepoints"][0].get("normals") is not None:
-                    stage0_trans = self._enforce_downward_facing_normals(leaf_ts["timepoints"])
-                    all_transformations.append(("enforce_downward_normals", stage0_trans))
-                else:
-                    all_transformations.append(("enforce_downward_normals", None))
+                # if leaf_ts["timepoints"][0].get("normals") is not None:
+                #     stage0_trans = self._enforce_downward_facing_normals(leaf_ts["timepoints"])
+                #     all_transformations.append(("enforce_downward_normals", stage0_trans))
+                # else:
+                #     all_transformations.append(("enforce_downward_normals", None))
 
                 # Stage 1: Apply PCA alignment with normal-aware Z-rotation
                 # Now the alignment can use the corrected normals to determine proper orientation
@@ -2060,7 +2060,9 @@ class LeafSequencesDataset(Dataset):
         composed = LeafSequencesDataset.compose_transformations(transformation_stages)
 
         original_timepoints = []
-        for tp_idx, (tp, comp) in enumerate(zip(leaf_timeseries["timepoints"], composed)):
+        for tp_idx, (tp, comp) in enumerate(
+            zip(leaf_timeseries["timepoints"], composed)
+        ):
             # Get inverse matrix (aligned -> original)
             inv_matrix = LeafSequencesDataset.invert_transformation(
                 comp["composed_matrix"]
@@ -2089,21 +2091,10 @@ class LeafSequencesDataset(Dataset):
                 )[0]
 
             # Note: Normals are direction vectors, need rotation-only transform
-            # PLUS we need to reverse the downward-facing flip if it was applied
             if tp.get("normals") is not None:
                 # Extract rotation part of inverse (upper-left 3x3)
                 R_inv = inv_matrix[:3, :3]
-                normals = tp["normals"] @ R_inv.T
-
-                # Check if downward normals stage flipped the normals
-                for stage_name, stage_trans in transformation_stages:
-                    if stage_name == "enforce_downward_normals" and stage_trans is not None:
-                        if stage_trans[tp_idx].get("flipped", False):
-                            # Reverse the flip
-                            normals = -normals
-                        break
-
-                original_tp["normals"] = normals
+                original_tp["normals"] = tp["normals"] @ R_inv.T
 
             original_timepoints.append(original_tp)
 
@@ -2219,14 +2210,147 @@ class LeafSequencesDataset(Dataset):
             tp = leaf_seq["timepoints"][idx]
             if tp.get("normals") is not None:
                 tp["normals"] = -tp["normals"]
-                print(f"✓ Flipped normals for {sequence_name} timepoint {idx} (day {tp['day']})")
+                print(
+                    f"✓ Flipped normals for {sequence_name} timepoint {idx} (day {tp['day']})"
+                )
 
         return leaf_seq
+
+    def save_plant_with_all_leaves(self, plant_sequence_name, output_dir=None):
+        """
+        Save entire plant with ALL corrected leaf normals from current dataset state.
+        Use this when you've corrected multiple leaves to save them all at once.
+
+        Args:
+            plant_sequence_name: Plant sequence name (e.g., 'maize_control_plant1')
+            output_dir: Directory to save PLY files (default: overwrites v2 dataset)
+
+        Returns:
+            Path to saved files directory
+        """
+        # Get plant timeseries
+        plant_ts = self.plant_dataset.get_timeseries_by_sequence_name(
+            plant_sequence_name
+        )
+        if plant_ts is None:
+            raise ValueError(f"Plant sequence '{plant_sequence_name}' not found")
+
+        # Get all leaves for this plant
+        all_leaves = self.get_timeseries_by_plant_sequence(plant_sequence_name)
+
+        # Set output directory - default to overwriting the source
+        if output_dir is None:
+            output_dir = self.plant_dataset.sparse_path.parent
+        else:
+            output_dir = Path(output_dir)
+
+        # Process each timepoint
+        saved_count = 0
+        for timepoint in plant_ts["timepoints"]:
+            day = timepoint["day"]
+            points = timepoint["points"]
+            labels = timepoint["labels"]
+            leaf_tip_idxs = timepoint["leaf_tip_idxs"]
+
+            # Get or initialize normals
+            if "normals" not in timepoint or timepoint["normals"] is None:
+                normals = np.zeros_like(points)
+            else:
+                normals = timepoint["normals"].copy()
+
+            # Update normals for ALL leaves in this plant
+            for leaf_seq in all_leaves:
+                leaf_id = leaf_seq["leaf_id"]
+
+                # Find matching leaf timepoint
+                leaf_tp = None
+                leaf_tp_idx = None
+                for idx, ltp in enumerate(leaf_seq["timepoints"]):
+                    if ltp["day"] == day:
+                        leaf_tp = ltp
+                        leaf_tp_idx = idx
+                        break
+
+                if leaf_tp is None or leaf_tp.get("normals") is None:
+                    continue
+
+                # Get leaf normals in aligned space
+                leaf_normals_aligned = leaf_tp["normals"]
+
+                # Transform normals back to plant-aligned coordinate system
+                if leaf_seq.get("transformation_stages") is not None:
+                    composed_transforms = LeafSequencesDataset.compose_transformations(
+                        leaf_seq["transformation_stages"]
+                    )
+
+                    if leaf_tp_idx < len(composed_transforms):
+                        # Get inverse transformation matrix
+                        composed_matrix = composed_transforms[leaf_tp_idx][
+                            "composed_matrix"
+                        ]
+                        inv_matrix = LeafSequencesDataset.invert_transformation(
+                            composed_matrix
+                        )
+
+                        # Extract rotation part only (upper-left 3x3)
+                        R_inv = inv_matrix[:3, :3]
+
+                        # Apply inverse rotation to normals
+                        leaf_normals_plant_space = leaf_normals_aligned @ R_inv.T
+                    else:
+                        leaf_normals_plant_space = leaf_normals_aligned
+                else:
+                    leaf_normals_plant_space = leaf_normals_aligned
+
+                # Get mask for this leaf in plant point cloud
+                leaf_mask = labels == leaf_id
+
+                # Assign corrected normals from leaf to plant
+                if np.sum(leaf_mask) == len(leaf_normals_plant_space):
+                    normals[leaf_mask] = leaf_normals_plant_space
+
+            # Save as PLY
+            file_path = timepoint["file_path"]
+            crop_name = file_path.parent.name
+            filename = file_path.stem + ".ply"
+
+            crop_dir = output_dir / "gt_corrected_v2" / crop_name
+            crop_dir.mkdir(parents=True, exist_ok=True)
+
+            # Create tensor-based point cloud
+            pcd = o3d.t.geometry.PointCloud(points)
+            pcd.point["organ_label"] = o3d.core.Tensor(
+                labels.reshape(-1, 1), dtype=o3d.core.Dtype.Int32
+            )
+            pcd.point["normals"] = o3d.core.Tensor(
+                normals.astype(np.float32), dtype=o3d.core.Dtype.Float32
+            )
+
+            # Add leaf tips
+            leaf_tip_mask = np.zeros(len(points), dtype=np.uint8)
+            if len(leaf_tip_idxs) > 0:
+                leaf_tip_mask[leaf_tip_idxs] = 1
+            pcd.point["is_leaf_tip"] = o3d.core.Tensor(
+                leaf_tip_mask.reshape(-1, 1), dtype=o3d.core.Dtype.UInt8
+            )
+
+            # Save
+            output_path = crop_dir / filename
+            o3d.t.io.write_point_cloud(str(output_path), pcd)
+            saved_count += 1
+
+        output_path = output_dir / "gt_corrected_v2"
+        print(f"✓ Saved plant '{plant_sequence_name}' with all corrected leaves")
+        print(f"  {saved_count} timepoints written to: {output_path}")
+        return output_path
 
     def save_leaf_to_plant_ply(self, leaf_sequence_name, output_dir=None):
         """
         Map corrected leaf normals back to plant and save updated plant PLY files.
-        This updates only the specific leaf's normals in the plant point cloud.
+
+        WARNING: If correcting multiple leaves from the same plant, use
+        save_plant_with_all_leaves() instead to avoid overwriting previous corrections,
+        since this method needs to reload original plant data.
 
         Args:
             leaf_sequence_name: Leaf sequence name (e.g., 'maize_control_plant1_leaf1')
@@ -2244,7 +2368,9 @@ class LeafSequencesDataset(Dataset):
         leaf_id = leaf_seq["leaf_id"]
 
         # Get plant timeseries
-        plant_ts = self.plant_dataset.get_timeseries_by_sequence_name(plant_sequence_name)
+        plant_ts = self.plant_dataset.get_timeseries_by_sequence_name(
+            plant_sequence_name
+        )
         if plant_ts is None:
             raise ValueError(f"Plant sequence '{plant_sequence_name}' not found")
 
@@ -2291,21 +2417,18 @@ class LeafSequencesDataset(Dataset):
 
                 if leaf_tp_idx < len(composed_transforms):
                     # Get inverse transformation matrix
-                    composed_matrix = composed_transforms[leaf_tp_idx]["composed_matrix"]
-                    inv_matrix = LeafSequencesDataset.invert_transformation(composed_matrix)
+                    composed_matrix = composed_transforms[leaf_tp_idx][
+                        "composed_matrix"
+                    ]
+                    inv_matrix = LeafSequencesDataset.invert_transformation(
+                        composed_matrix
+                    )
 
                     # Extract rotation part only (upper-left 3x3)
                     R_inv = inv_matrix[:3, :3]
 
                     # Apply inverse rotation to normals
                     leaf_normals_plant_space = leaf_normals_aligned @ R_inv.T
-
-                    # Also reverse downward-facing flip if it was applied
-                    for stage_name, stage_trans in leaf_seq["transformation_stages"]:
-                        if stage_name == "enforce_downward_normals" and stage_trans is not None:
-                            if stage_trans[leaf_tp_idx].get("flipped", False):
-                                leaf_normals_plant_space = -leaf_normals_plant_space
-                            break
                 else:
                     leaf_normals_plant_space = leaf_normals_aligned
             else:
