@@ -9,8 +9,11 @@ For using just the dataloaders in other projects (e.g., CanFields):
 ```bash
 git clone https://github.com/Joaquin-Gajardo/plant-shape-analysis.git
 pip install -e .
+
+# Or directly from GitHub:
+pip install git+https://github.com/Joaquin-Gajardo/plant-shape-analysis.git
 ```
-This installs only core dependencies: numpy, torch, open3d
+This installs only core dependencies: numpy, torch, open3d, if not already installed in the environment.
 
 ### Complete setup for development
 For full functionality including visualization, alignment, and experiments:
@@ -56,46 +59,55 @@ We provide a processed version, with leaf keypoint annotations, cleaned segmenta
 
 **Automatic download:** The dataset will be downloaded automatically when you first use the dataloader if not found (751 MB).
 
+```python
+from plant_shape_analysis import PlantSequencesDataset
+
+dataset = PlantSequencesDataset("data/TrackPlant3D/versions") # will auto-download v2 if not found
+```
+
 **Manual download (optional):**
 ```bash
-# Download v1 of the dataset (751 MB)
-wget -O v1.zip https://polybox.ethz.ch/index.php/s/mxiZwKfCfd39Rxx/download
-folder=data/TrackPlant3D/versions && mkdir -p $folder && unzip v1.zip -d $folder
-rm v1.zip
+# Download v2 of the dataset (130.2 MB)
+wget -O v2.zip https://polybox.ethz.ch/index.php/s/7XwferiX92aogn5/download
+folder=data/TrackPlant3D/versions && mkdir -p $folder && unzip v2.zip -d $folder
+rm v2.zip
 ```
 
 #### Dataloader
 We provide PyTorch Dataset classes for loading the TrackPlant3D dataset:
 
 - `PlantSequencesDataset`: Load plants as temporal sequences
-- `LeafSequencesDataset`: Load individual leaves as temporal sequences with optional PCA alignment and normal estimation
+- `LeafSequencesDataset`: Load individual leaves as temporal sequences with optional PCA-based alignment
 
 Example usage:
 ```python
 from pathlib import Path
+
 from plant_shape_analysis import PlantSequencesDataset, LeafSequencesDataset
+from plant_shape_analysis.vis.plot_functions import visualize_leaf_sequence
 
 dataset_path = Path("data/TrackPlant3D/versions")
 
 # Load leaf sequences with alignment
 leaf_dataset = LeafSequencesDataset(
     dataset_path,
-    min_timepoints=2,
-    alignment_method='pca',
-    estimate_normals=True,
-    use_ply=True
+    apply_alignment=True,
 )
 
-# List all sequence names
-print(leaf_dataset.get_sequence_names())
+# Get all leaves from a specific plant sequence
+leaf_seq = leaf_dataset.get_timeseries_by_sequence_name('maize_control_plant1_leaf1')
+print(leaf_seq)
+
+# Visualize the leaf timeseries
+visualize_leaf_sequence(leaf_seq, window_name=f"{leaf_seq['sequence_name']}", spacing=50, show_coordinate_frame=True, show_connections=True)
+
+# Other utilites
+print(leaf_dataset.get_sequence_names()) # list all leaf sequence names
 
 # Get a specific leaf timeseries by its unique sequence name
-maize_leaf1 = leaf_dataset.get_timeseries_by_sequence_name('maize_control_plant1_leaf1')
-print(maize_leaf1)
+all_leaves = leaf_dataset.get_timeseries_by_plant_sequence('maize_control_plant1')
+print(len(all_leaves))  # number of leaves in that plant
 
-# Get all leaves from a specific plant sequence
-maize_leaves = leaf_dataset.get_timeseries_by_plant_sequence('maize_control_plant1')
-print(len(maize_leaves))  # number of leaves in that plant
 ```
 
 

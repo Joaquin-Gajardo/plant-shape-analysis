@@ -17,7 +17,7 @@ class PlantSequencesDataset(Dataset):
                 "url": "https://polybox.ethz.ch/index.php/s/mxiZwKfCfd39Rxx/download",
                 "filename": "v1.zip",
                 "extract_dir": "v1",
-                "size_mb": 751,
+                "size_mb": 660,
                 "description": "TrackPlant3D v1 dataset with leaf keypoint annotations and dense point clouds",
             },
             "orientation_corrected": False,  # Needs Y->Z correction for some crops
@@ -25,10 +25,10 @@ class PlantSequencesDataset(Dataset):
         "v2": {
             "data_dirs": {"sparse": "gt_corrected_v2", "dense": "dense"},
             "download_info": {
-                "url": "https://polybox.ethz.ch/index.php/s/TODO/download",  # TODO: Update when uploaded
+                "url": "https://polybox.ethz.ch/index.php/s/7XwferiX92aogn5",
                 "filename": "v2.zip",
                 "extract_dir": "v2",
-                "size_mb": 1200,  # Estimated (larger due to normals)
+                "size_mb": 130,
                 "description": "TrackPlant3D v2 with pre-aligned point clouds and corrected normals (faster loading)",
             },
             "orientation_corrected": True,  # NOTE: change to True if uploaded TXT or PLY files have Y→Z rotation applied during preprocessing, set to False when loading raw data in TXT format
@@ -38,8 +38,8 @@ class PlantSequencesDataset(Dataset):
     def __init__(
         self,
         dataset_path,
-        version="v1",
-        use_ply=False,
+        version="v2",
+        use_ply=True,
         alignment_method=None,
         save_transformations=False,
         estimate_normals=False,
@@ -52,7 +52,7 @@ class PlantSequencesDataset(Dataset):
 
         Args:
             dataset_path: Path to TrackPlant3D dataset
-            version: Dataset version (default: "v1")
+            version: Dataset version (default: "v2")
             use_ply: If True, load from PLY files instead of TXT files. Keeping both options for compatibility to original dataset format.
             alignment_method: Alignment method - None (no alignment), 'pca' (fast, approximate), 'icp' (slower, more accurate), or 'stem_based' (uses only stem points with sequential alignment and vertical correction)
             save_transformations: If True, save transformation matrices when applying alignment
@@ -951,14 +951,14 @@ class LeafSequencesDataset(Dataset):
     def __init__(
         self,
         dataset_path: str,
-        version: str = "v1",
+        version: str = "v2",
         min_timepoints: int = 3,
         max_timepoints: Optional[int] = None,
         apply_alignment: bool = False,
         plant_alignment_method: Optional[str] = None,
         estimate_plant_normals: bool = False,
         estimate_normals: bool = False,
-        use_ply: bool = False,
+        use_ply: bool = True,
         save_transformations: bool = False,
         auto_download: bool = True,
         manual_z_rotations: Optional[dict] = None,
@@ -968,7 +968,7 @@ class LeafSequencesDataset(Dataset):
 
         Args:
             dataset_path: Path to TrackPlant3D dataset
-            version: Dataset version (default: "v1")
+            version: Dataset version (default: "v2")
             min_timepoints: Minimum number of timepoints for a leaf sequence
             max_timepoints: Maximum number of timepoints (None = no limit)
             apply_alignment: If True, align leaf sequences individually (multi-state approach)
@@ -2481,14 +2481,7 @@ if __name__ == "__main__":
 
     # Example usage for PlantSequencesDataset with alignment
     print("Creating plant dataset...")
-    plant_dataset = PlantSequencesDataset(
-        dataset_path,
-        version="v1",
-        alignment_method="stem_based",
-        estimate_normals=True,
-        save_transformations=False,
-        use_ply=True,
-    )
+    plant_dataset = PlantSequencesDataset(dataset_path)
     print("Plant sequences dataset:")
     print(f"Number of sequences: {len(plant_dataset)}")
     print(
@@ -2515,32 +2508,32 @@ if __name__ == "__main__":
             spacing=100.0,
         )
 
-    # # Example usage for LeafSequencesDataset
-    # print("Creating leaf dataset with PCA alignment...")
-    # leaf_dataset = LeafSequencesDataset(
-    #     dataset_path, min_timepoints=3, apply_pca_alignment=True
-    # )
-    # # print("Leaf timeseries dataset:")
-    # # print(f"Number of leaf timeseries: {len(leaf_dataset)}")
+    # Example usage for LeafSequencesDataset
+    print("Creating leaf dataset with PCA alignment...")
+    leaf_dataset = LeafSequencesDataset(
+        dataset_path, min_timepoints=3, apply_alignment=True
+    )
+    # print("Leaf timeseries dataset:")
+    # print(f"Number of leaf timeseries: {len(leaf_dataset)}")
 
-    # # info = leaf_dataset.get_leaf_timeseries_info()
-    # # print("Dataset info:", info)
-    # # print("\n")
+    # info = leaf_dataset.get_leaf_timeseries_info()
+    # print("Dataset info:", info)
+    # print("\n")
 
-    # # sample = leaf_dataset[0]
+    # sample = leaf_dataset[0]
 
-    # # Visualize some leaf sequences
-    # print("Visualizing some leaf sequences...")
+    # Visualize some leaf sequences
+    print("Visualizing some leaf sequences...")
 
-    # from plant_shape_analysis.vis.plot_functions import visualize_leaf_sequence
+    from plant_shape_analysis.vis.plot_functions import visualize_leaf_sequence
 
-    # sequences = [
-    #     "maize_control_plant2_leaf2",
-    #     "tomato2_control_plant2_leaf1",
-    #     "tomato2_control_plant3_leaf2",
-    # ]
+    sequences = [
+        "maize_control_plant2_leaf2",
+        "tomato2_control_plant2_leaf1",
+        "tomato2_control_plant3_leaf2",
+    ]
 
-    # for i, seq in enumerate(sequences):
-    #     sample = leaf_dataset.get_timeseries_by_sequence_name(seq)
-    #     print(f"Visualizing leaf sequence {seq} ({i+1}/{len(sequences)})...")
-    #     visualize_leaf_sequence(sample, dense_points=True)
+    for i, seq in enumerate(sequences):
+        sample = leaf_dataset.get_timeseries_by_sequence_name(seq)
+        print(f"Visualizing leaf sequence {seq} ({i+1}/{len(sequences)})...")
+        visualize_leaf_sequence(sample, dense_points=True)
