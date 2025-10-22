@@ -9,6 +9,17 @@ This script:
 5. Saves transformation matrices for reproducibility
 
 The resulting v2 dataset can be loaded directly without expensive alignment and normal computation.
+
+
+WARNING: This script is ARCHIVED for reference only!
+
+DO NOT RUN - it will overwrite manually corrected labels and normals in v2 PLY files.
+
+The v2 PLY files have manual corrections:
+- Labels: corrected in notebook 2
+- Normals: corrected in notebook 10
+
+Always load from version="v2" with use_ply=True going forward.
 """
 
 import argparse
@@ -278,6 +289,19 @@ def main():
     print(f"Save dense: {args.save_dense}")
     print()
 
+    # Manual Z-rotations for problematic sequences (obtained from notebook 8)
+    # These are cumulative angles applied sequentially to each timepoint
+    manual_z_rotations = {
+        "tobacco_control_plant1": {6: -146.0},
+        "tobacco_shade_plant3": {
+            3: -89,
+            2: -89 + 150,
+            1: -89 + 150 + 142,
+            0: -89 + 150 + 142 - 90,
+        },
+    }  # Angles obtained in notebook 8, need to accumulate angles carefully
+    # since we obtained them by comparing to previous UNADJUSTED timestep
+
     # Step 1: Create leaf dataset to get corrected normals
     # This internally creates plant_dataset with alignment and normals
     print("Step 1/2: Creating leaf dataset to compute corrected normals...")
@@ -286,12 +310,13 @@ def main():
     )
     leaf_dataset = LeafSequencesDataset(
         dataset_path,
-        version="v1",
+        version="v1",  # should have been v2 due to labels correction in notebook 2, but fixed ply files in notebook 2 anyways
         use_ply=True,
         plant_alignment_method=args.alignment_method,
         estimate_plant_normals=True,  # Estimate normals for plants
         apply_alignment=True,  # Apply leaf alignment to correct normals
         save_transformations=True,
+        manual_z_rotations=manual_z_rotations,
     )
 
     # Access the plant dataset from leaf_dataset
