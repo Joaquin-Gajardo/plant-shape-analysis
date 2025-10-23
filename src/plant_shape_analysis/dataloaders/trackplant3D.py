@@ -2483,48 +2483,38 @@ if __name__ == "__main__":
 
     dataset_path = Path("data/TrackPlant3D/versions")
 
-    # Example usage for PlantSequencesDataset with alignment
-    print("Creating plant dataset...")
-    plant_dataset = PlantSequencesDataset(dataset_path)
-    print("Plant sequences dataset:")
-    print(f"Number of sequences: {len(plant_dataset)}")
-    print(
-        "Available sequences (first 5):", plant_dataset.get_sequence_names()[:5]
-    )  # Show first 5
-    print("\n")
+    # # Example usage for PlantSequencesDataset with alignment
+    # print("Creating plant dataset...")
+    # plant_dataset = PlantSequencesDataset(dataset_path)
+    # print("Plant sequences dataset:")
+    # print(f"Number of sequences: {len(plant_dataset)}")
+    # print(
+    #     "Available sequences (first 5):", plant_dataset.get_sequence_names()[:5]
+    # )  # Show first 5
+    # print("\n")
 
-    # Visualize some plant sequences
-    from plant_shape_analysis.vis.plot_functions import visualize_plant_sequence
+    # # Visualize some plant sequences
+    # from plant_shape_analysis.vis.plot_functions import visualize_plant_sequence
 
-    plant_sequences = [
-        "maize_control_plant2",
-        "tomato2_control_plant2",
-    ]
+    # plant_sequences = [
+    #     "maize_control_plant2",
+    #     "tomato2_control_plant2",
+    # ]
 
-    for i, seq in enumerate(plant_sequences):
-        sample = plant_dataset.get_timeseries_by_sequence_name(seq)
-        print(f"Visualizing plant sequence {seq} ({i+1}/{len(plant_sequences)})...")
-        visualize_plant_sequence(
-            sample,
-            dense_points=False,
-            color_by_organ=True,
-            show_leaf_tips=True,
-            spacing=100.0,
-        )
+    # for i, seq in enumerate(plant_sequences):
+    #     sample = plant_dataset.get_timeseries_by_sequence_name(seq)
+    #     print(f"Visualizing plant sequence {seq} ({i+1}/{len(plant_sequences)})...")
+    #     visualize_plant_sequence(
+    #         sample,
+    #         dense_points=False,
+    #         color_by_organ=True,
+    #         show_leaf_tips=True,
+    #         spacing=100.0,
+    #     )
 
     # Example usage for LeafSequencesDataset
     print("Creating leaf dataset with PCA alignment...")
-    leaf_dataset = LeafSequencesDataset(
-        dataset_path, min_timepoints=3, apply_alignment=True
-    )
-    # print("Leaf timeseries dataset:")
-    # print(f"Number of leaf timeseries: {len(leaf_dataset)}")
-
-    # info = leaf_dataset.get_leaf_timeseries_info()
-    # print("Dataset info:", info)
-    # print("\n")
-
-    # sample = leaf_dataset[0]
+    leaf_dataset = LeafSequencesDataset(dataset_path, apply_alignment=True)
 
     # Visualize some leaf sequences
     print("Visualizing some leaf sequences...")
@@ -2540,4 +2530,4 @@ if __name__ == "__main__":
     for i, seq in enumerate(sequences):
         sample = leaf_dataset.get_timeseries_by_sequence_name(seq)
         print(f"Visualizing leaf sequence {seq} ({i+1}/{len(sequences)})...")
-        visualize_leaf_sequence(sample, dense_points=True)
+        visualize_leaf_sequence(sample)
