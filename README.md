@@ -8,6 +8,7 @@ A repository for reconstructing and analyzing plant shape evolution using implic
 For using just the dataloaders in other projects (e.g., CanFields):
 ```bash
 git clone https://github.com/Joaquin-Gajardo/plant-shape-analysis.git
+cd plant-shape-analysis
 pip install -e .
 
 # Or directly from GitHub:
