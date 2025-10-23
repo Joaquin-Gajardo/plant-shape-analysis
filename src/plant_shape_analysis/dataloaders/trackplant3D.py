@@ -788,8 +788,6 @@ class PlantSequencesDataset(Dataset):
                     normals = np.asarray(pcd.normals)
                     timepoint["normals"] = normals
 
-            # Ensure temporal consistency of normals across timepoints
-            # self._enforce_temporal_normal_consistency_plant(plant_ts["timepoints"])
         print("Normal estimation complete.")
 
     def _enforce_temporal_normal_consistency_plant(self, timepoints, reference_idx=0):
@@ -1195,8 +1193,6 @@ class LeafSequencesDataset(Dataset):
                     normals = np.asarray(pcd.normals)
                     timepoint["normals"] = normals
 
-            # Ensure temporal consistency of normals across timepoints
-            # self._enforce_temporal_normal_consistency(leaf["timepoints"])
         print("Normal estimation complete.")
 
     def _prealign_with_leaf_tips(self, timepoints):
@@ -2486,12 +2482,6 @@ if __name__ == "__main__":
     # # Example usage for PlantSequencesDataset with alignment
     # print("Creating plant dataset...")
     # plant_dataset = PlantSequencesDataset(dataset_path)
-    # print("Plant sequences dataset:")
-    # print(f"Number of sequences: {len(plant_dataset)}")
-    # print(
-    #     "Available sequences (first 5):", plant_dataset.get_sequence_names()[:5]
-    # )  # Show first 5
-    # print("\n")
 
     # # Visualize some plant sequences
     # from plant_shape_analysis.vis.plot_functions import visualize_plant_sequence
@@ -2516,7 +2506,6 @@ if __name__ == "__main__":
     print("Creating leaf dataset with PCA alignment...")
     leaf_dataset = LeafSequencesDataset(dataset_path, apply_alignment=True)
 
-    # Visualize some leaf sequences
     print("Visualizing some leaf sequences...")
 
     from plant_shape_analysis.vis.plot_functions import visualize_leaf_sequence
