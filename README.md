@@ -13,6 +13,9 @@ pip install -e .
 
 # Or directly from GitHub:
 pip install git+https://github.com/Joaquin-Gajardo/plant-shape-analysis.git
+
+# To update to the latest version:
+pip uninstall plant-shape-analysis -y && pip install git+https://github.com/Joaquin-Gajardo/plant-shape-analysis.git
 ```
 This installs only core dependencies: numpy, torch, open3d, if not already installed in the environment.
 
