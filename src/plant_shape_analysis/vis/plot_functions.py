@@ -4,7 +4,6 @@ from typing import Optional
 import matplotlib.pyplot as plt
 import numpy as np
 import open3d as o3d
-import pymeshlab
 import torch
 
 COLOR_MAP = {  # Color mapping for semantic labels to match roughly the TrackPlant3D paper figures
@@ -22,7 +21,7 @@ COLOR_MAP = {  # Color mapping for semantic labels to match roughly the TrackPla
 
 
 def visualize_pymeshlab_mesh(
-    ms: pymeshlab.MeshSet, window_name: str = "Mesh Visualization"
+    ms, window_name: str = "Mesh Visualization"
 ):
     """
     Visualize a PyMeshLab mesh using Open3D
@@ -31,6 +30,8 @@ def visualize_pymeshlab_mesh(
         ms: PyMeshLab MeshSet containing the mesh
         window_name: Name for the visualization window
     """
+    import pymeshlab
+
     # Get the current mesh from MeshSet
     mesh = ms.current_mesh()
 
