@@ -8,6 +8,9 @@ import numpy as np
 import open3d as o3d
 from torch.utils.data import Dataset
 
+from plant_shape_analysis import alignment
+from plant_shape_analysis.dataloaders import normal_estimation, point_cloud_utils
+
 
 class PlantSequencesDataset(Dataset):
     DATASET_CONFIGS = {
@@ -248,89 +251,20 @@ class PlantSequencesDataset(Dataset):
         return self.sequences.get(sequence_name, [])
 
     def load_point_cloud(self, file_path):
-        """Load point cloud from txt or ply file, including normals if available"""
-        if self.use_ply:
-            # Load from PLY file
-            pcd = o3d.t.io.read_point_cloud(str(file_path))
-            points = pcd.point.positions.numpy()
-            labels = pcd.point.organ_label.numpy().flatten().astype(int)
-
-            # Load normals if they exist in the PLY file
-            normals = None
-            if "normals" in pcd.point:
-                normals = pcd.point.normals.numpy()
-
-            return points, labels, normals
-        else:
-            # Load from TXT file
-            # File format: x, y, z, organ_instance_label
-            data = np.loadtxt(file_path)
-            points = data[:, :3]  # x, y, z coordinates
-            labels = data[:, 3].astype(int)  # labels
-            normals = None  # TXT files don't have normals
-            return points, labels, normals
+        """Load point cloud (wrapper for point_cloud_utils.load_point_cloud)"""
+        return point_cloud_utils.load_point_cloud(file_path, use_ply=self.use_ply)
 
     def load_dense_point_cloud(self, file_path):
-        """Load dense point cloud for a specific sequence and day if available"""
-        if self.dense_path is None:
-            return None, None, None
-        crop_name = file_path.parent.name
-        dense_file_path = self.dense_path / crop_name / file_path.name
-        if dense_file_path.exists():
-            return self.load_point_cloud(dense_file_path)
-        return None, None, None
+        """Load dense point cloud (wrapper for point_cloud_utils.load_dense_point_cloud)"""
+        return point_cloud_utils.load_dense_point_cloud(
+            file_path, self.dense_path, use_ply=self.use_ply
+        )
 
     def load_leaf_tips(self, point_cloud_path):
-        """Load leaf tips for a specific sequence and day"""
-        crop_name = point_cloud_path.parent.name
-
-        if self.use_ply:
-            # For PLY: read is_leaf_tip scalar field from main point cloud
-            pcd = o3d.t.io.read_point_cloud(str(point_cloud_path))
-            points = pcd.point.positions.numpy()
-            is_leaf_tip = pcd.point.is_leaf_tip.numpy().flatten().astype(bool)
-
-            # Get indices where is_leaf_tip is True
-            global_indices = np.where(is_leaf_tip)[0]
-            coordinates = points[global_indices]
-
-            return global_indices, coordinates
-        else:
-            # For TXT: load from comma-delimited txt file
-            file_path = self.leaf_tips_path / crop_name / point_cloud_path.name
-
-            # Load with comma delimiter - format: global_index, x, y, z
-            global_indices = np.array([])
-            coordinates = np.array([])
-            if file_path.exists():
-                data = np.loadtxt(file_path, delimiter=",")
-                if data.ndim == 1:  # Single row
-                    data = data.reshape(1, -1)
-
-                # Extract global indices and coordinates
-                global_indices = data[:, 0].astype(int)
-                coordinates = data[:, 1:4]
-            # Note: Leaf tips may not exist for all files, which is expected
-
-            return global_indices, coordinates
-
-    def _needs_orientation_correction(self, sequence_name):
-        """Check if sequence needs Y->Z orientation correction"""
-        # Sorghum, tobacco, and tomato1 have Y as up instead of Z
-        crops_to_correct = ["sorghum", "tobacco", "tomato1"]
-        return any(sequence_name.startswith(crop) for crop in crops_to_correct)
-
-    def _correct_orientation(self, points, normals=None):
-        """Apply 90° rotation around X axis to make Z up instead of Y"""
-        # Rotation matrix for 90° around X: Y -> Z, Z -> -Y, X -> X
-        R = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]], dtype=np.float64)
-
-        rotated_points = points @ R.T
-        rotated_normals = None
-        if normals is not None:
-            rotated_normals = normals @ R.T
-
-        return rotated_points, rotated_normals
+        """Load leaf tips (wrapper for point_cloud_utils.load_leaf_tips)"""
+        return point_cloud_utils.load_leaf_tips(
+            point_cloud_path, self.leaf_tips_path, use_ply=self.use_ply
+        )
 
     def get_sequence_data(self, sequence_name):
         """Get all point clouds and leaf tips for a sequence"""
@@ -339,7 +273,7 @@ class PlantSequencesDataset(Dataset):
         # Only apply orientation correction if dataset version needs it
         needs_correction = (
             not self.orientation_corrected
-            and self._needs_orientation_correction(sequence_name)
+            and point_cloud_utils.needs_orientation_correction(sequence_name)
         )
 
         for file_path in files:
@@ -360,13 +294,13 @@ class PlantSequencesDataset(Dataset):
 
             # Apply orientation correction if needed (before validation)
             if needs_correction:
-                points, normals = self._correct_orientation(points, normals)
+                points, normals = point_cloud_utils.correct_orientation(points, normals)
                 if dense_points is not None:
-                    dense_points, dense_normals = self._correct_orientation(
+                    dense_points, dense_normals = point_cloud_utils.correct_orientation(
                         dense_points, dense_normals
                     )
                 if leaf_tip_coordinates.size > 0:
-                    leaf_tip_coordinates, _ = self._correct_orientation(
+                    leaf_tip_coordinates, _ = point_cloud_utils.correct_orientation(
                         leaf_tip_coordinates
                     )
 
@@ -404,59 +338,8 @@ class PlantSequencesDataset(Dataset):
         return sequence_data
 
     def _pca_align(self, pc1, pc2):
-        """
-        PCA-based alignment that doesn't require same number of points.
-        Ensures consistent orientation by aligning to reference (pc2) principal components.
-
-        Args:
-            pc1: First point cloud (centered) - to be aligned
-            pc2: Second point cloud (centered) - reference
-
-        Returns:
-            Rotation matrix to align pc1 to pc2's coordinate system
-        """
-
-        def get_pca(pc):
-            pc_centered = pc - pc.mean(axis=0)
-            U, S, Vt = np.linalg.svd(pc_centered, full_matrices=False)
-            is_sorted = np.all(S[:-1] >= S[1:])
-            if not is_sorted:
-                print("Singular values not sorted descending")
-            return Vt  # rows are components
-
-        def align_components_to_reference(components, reference_components):
-            """Align principal components to match reference orientation"""
-            aligned_components = components.copy()
-
-            for i in range(min(len(components), len(reference_components))):
-                # Check dot product to determine if we need to flip
-                dot_product = np.dot(components[i], reference_components[i])
-
-                # If dot product is negative, flip the component to align with reference
-                if dot_product < 0:
-                    aligned_components[i] = -aligned_components[i]
-
-            return aligned_components
-
-        # Get PCA components for both point clouds
-        R1_raw = get_pca(pc1)
-        R2 = get_pca(pc2)
-
-        # Align pc1 components to match pc2 reference orientation
-        R1 = align_components_to_reference(R1_raw, R2)
-
-        # Compute rotation matrix to align pc1 to pc2
-        R = R2.T @ R1
-
-        # Additional check: ensure rotation doesn't introduce a flip
-        # Check if determinant is negative (indicates reflection/flip)
-        if np.linalg.det(R) < 0:
-            print("Reflection detected: flipping first principal component")
-            # If we have a reflection, flip the last principal component
-            R1[0] = -R1[0]
-            R = R2.T @ R1
-
-        return R, R1
+        """PCA alignment (wrapper for alignment.pca_align_pair)"""
+        return alignment.pca_align_pair(pc1, pc2)
 
     def align_plant_sequence(self, sequence_data, reference_idx=0, method=None):
         """
@@ -757,127 +640,14 @@ class PlantSequencesDataset(Dataset):
         )
 
     def _estimate_normals(self):
-        """Estimate normals for all plants in the dataset."""
-        # NOTE: these are only estimated for sparse points, as dense points takes a long time
-
-        # Check if normals are already loaded from file
-        has_normals = any(
-            timepoint.get("normals") is not None
-            for plant_ts in self.plant_timeseries
-            for timepoint in plant_ts["timepoints"]
+        """Estimate normals (wrapper for normal_estimation.estimate_normals_for_timeseries)"""
+        normal_estimation.estimate_normals_for_timeseries(
+            self.plant_timeseries, object_type="plant"
         )
 
-        if has_normals:
-            print("Warning: Normals already present in dataset. Re-estimating anyway.")
-            print(
-                "  (Set estimate_normals=False to skip estimation and use loaded normals)"
-            )
-
-        print("Estimating normals for all sparse plants in the dataset...")
-        for plant_ts in self.plant_timeseries:
-            for timepoint in plant_ts["timepoints"]:
-                # Estimate normals for sparse points
-                points = timepoint["points"]
-                if points is not None and len(points) > 0:
-                    # Estimate normals using Open3D
-                    pcd = o3d.geometry.PointCloud()
-                    pcd.points = o3d.utility.Vector3dVector(points)
-                    pcd.estimate_normals()
-                    pcd.orient_normals_to_align_with_direction()
-                    pcd.orient_normals_consistent_tangent_plane(k=30)
-                    normals = np.asarray(pcd.normals)
-                    timepoint["normals"] = normals
-
-        print("Normal estimation complete.")
-
     def _enforce_temporal_normal_consistency_plant(self, timepoints, reference_idx=0):
-        """
-        Enforce temporal consistency of normals across timepoints for a plant sequence.
-        Uses sequential propagation: compares each timepoint to the previous one.
-        Processes each leaf (organ label) separately to ensure normals remain consistent
-        on the same face of each leaf over time.
-
-        Args:
-            timepoints: List of timepoint dictionaries containing 'points', 'labels', and 'normals'
-            reference_idx: Index of reference timepoint (default: 0, not used in sequential mode)
-        """
-        if len(timepoints) < 2:
-            return
-
-        # Check if first timepoint has normals
-        if "normals" not in timepoints[0] or timepoints[0]["normals"] is None:
-            return
-
-        # Sequential propagation: compare each timepoint to the previous one
-        for i in range(1, len(timepoints)):
-            prev_tp = timepoints[i - 1]  # Previous timepoint as reference
-            curr_tp = timepoints[i]
-
-            if "normals" not in curr_tp or curr_tp["normals"] is None:
-                continue
-
-            prev_points = prev_tp["points"]
-            prev_labels = prev_tp["labels"]
-            prev_normals = prev_tp["normals"]
-
-            curr_points = curr_tp["points"]
-            curr_labels = curr_tp["labels"]
-            curr_normals = curr_tp["normals"]
-
-            # Get unique organ labels from current timepoint
-            unique_labels = np.unique(curr_labels)
-
-            # Process each organ separately
-            for organ_label in unique_labels:
-                # Skip if this organ doesn't exist in current timepoint
-                curr_organ_mask = curr_labels == organ_label
-                if not np.any(curr_organ_mask):
-                    continue
-
-                # Skip if organ doesn't exist in previous timepoint
-                prev_organ_mask = prev_labels == organ_label
-                if not np.any(prev_organ_mask):
-                    continue
-
-                # Get points and normals for this organ
-                curr_organ_points = curr_points[curr_organ_mask]
-                curr_organ_normals = curr_normals[curr_organ_mask]
-                prev_organ_points = prev_points[prev_organ_mask]
-                prev_organ_normals = prev_normals[prev_organ_mask]
-
-                # Build KD-tree for previous organ points
-                from scipy.spatial import cKDTree
-
-                prev_tree = cKDTree(prev_organ_points)
-
-                # Find nearest neighbors in previous frame
-                distances, indices = prev_tree.query(curr_organ_points, k=1)
-
-                # For each point, check if normal should be flipped
-                matched_prev_normals = prev_organ_normals[indices]
-
-                # Compute dot product between current and previous normals
-                dot_products = np.sum(curr_organ_normals * matched_prev_normals, axis=1)
-
-                # Use majority voting: if most normals point in wrong direction, flip ALL
-                # Only consider points with close matches (within reasonable distance)
-                max_distance = np.percentile(
-                    distances, 75
-                )  # Use 75th percentile as threshold
-                reliable_matches = distances < max_distance
-
-                if np.any(reliable_matches):
-                    avg_dot_product = np.mean(dot_products[reliable_matches])
-
-                    # If average dot product is negative, flip ALL normals for this organ
-                    if avg_dot_product < 0:
-                        curr_organ_normals = -curr_organ_normals
-
-                # Update normals in the full array
-                curr_normals[curr_organ_mask] = curr_organ_normals
-
-            # Update normals in timepoint
-            curr_tp["normals"] = curr_normals
+        """Enforce temporal normal consistency (wrapper for normal_estimation.enforce_temporal_normal_consistency)"""
+        normal_estimation.enforce_temporal_normal_consistency(timepoints, reference_idx)
 
     def save_transformations(
         self, sequence_name, transformations, save_dir="transformations"
@@ -1164,203 +934,18 @@ class LeafSequencesDataset(Dataset):
         return dict(leaf_tracks)
 
     def _estimate_normals(self):
-        # Check if normals are already loaded from plant dataset
-        has_normals = any(
-            timepoint.get("normals") is not None
-            for leaf in self.leaf_timeseries
-            for timepoint in leaf["timepoints"]
+        """Estimate normals (wrapper for normal_estimation.estimate_normals_for_timeseries)"""
+        normal_estimation.estimate_normals_for_timeseries(
+            self.leaf_timeseries, object_type="leaf"
         )
-
-        if has_normals:
-            print(
-                "Warning: Normals already present in leaf dataset (from plant dataset). Re-estimating anyway."
-            )
-            print(
-                "  (Set estimate_normals=False to skip estimation and use loaded normals)"
-            )
-
-        print("Estimating normals for all leaves in the dataset...")
-        for leaf in self.leaf_timeseries:
-            for timepoint in leaf["timepoints"]:
-                points = timepoint["points"]
-                if points is not None and len(points) > 0:
-                    # Estimate normals using Open3D
-                    pcd = o3d.geometry.PointCloud()
-                    pcd.points = o3d.utility.Vector3dVector(points)
-                    pcd.estimate_normals()
-                    pcd.orient_normals_to_align_with_direction()
-                    pcd.orient_normals_consistent_tangent_plane(k=30)
-                    normals = np.asarray(pcd.normals)
-                    timepoint["normals"] = normals
-
-        print("Normal estimation complete.")
 
     def _prealign_with_leaf_tips(self, timepoints):
-        """
-        Pre-align rotation around Y-axis using leaf tip directions.
-        This is done on UNALIGNED data to roughly orient leaves correctly
-        before normal consistency and PCA alignment.
-
-        Uses sequential propagation: aligns each timepoint to the previous one
-        based on the direction from centroid to leaf tip projected onto XZ plane.
-
-        Args:
-            timepoints: List of timepoint dictionaries (modified in-place)
-
-        Returns:
-            List of transformation dictionaries for each timepoint
-        """
-        if len(timepoints) < 2:
-            return [
-                {
-                    "stage": "prealign_tip",
-                    "day": timepoints[0]["day"],
-                    "rotation": np.eye(3),
-                    "translation": np.zeros(3),
-                    "center": np.zeros(3),
-                }
-            ]
-
-        transformations = []
-
-        # First timepoint is reference
-        transformations.append(
-            {
-                "stage": "prealign_tip",
-                "day": timepoints[0]["day"],
-                "rotation": np.eye(3),
-                "translation": np.zeros(3),
-                "center": np.mean(timepoints[0]["points"], axis=0),
-            }
-        )
-
-        # Sequential propagation: align each timepoint to previous one
-        for i in range(1, len(timepoints)):
-            prev_tp = timepoints[i - 1]
-            curr_tp = timepoints[i]
-
-            curr_center = np.mean(curr_tp["points"], axis=0)
-
-            # Check if both have leaf tips
-            if prev_tp.get("leaf_tip") is None or curr_tp.get("leaf_tip") is None:
-                # No transformation
-                transformations.append(
-                    {
-                        "stage": "prealign_tip",
-                        "day": curr_tp["day"],
-                        "rotation": np.eye(3),
-                        "translation": np.zeros(3),
-                        "center": curr_center,
-                    }
-                )
-                continue
-
-            # Get centroids
-            prev_center = np.mean(prev_tp["points"], axis=0)
-
-            # Compute direction from centroid to tip
-            prev_direction = prev_tp["leaf_tip"] - prev_center
-            curr_direction = curr_tp["leaf_tip"] - curr_center
-
-            # Project onto XZ plane (we rotate around Y-axis)
-            prev_xz = np.array([prev_direction[0], prev_direction[2]])
-            curr_xz = np.array([curr_direction[0], curr_direction[2]])
-
-            # Compute rotation angle in XZ plane
-            prev_angle = np.arctan2(prev_xz[1], prev_xz[0])  # Z, X
-            curr_angle = np.arctan2(curr_xz[1], curr_xz[0])
-            rotation_angle = prev_angle - curr_angle
-
-            # Create Y-rotation matrix
-            cos_theta = np.cos(rotation_angle)
-            sin_theta = np.sin(rotation_angle)
-            rot_y = np.array(
-                [[cos_theta, 0, sin_theta], [0, 1, 0], [-sin_theta, 0, cos_theta]],
-                dtype=np.float64,
-            )
-
-            # Apply rotation to current timepoint (centered around its own centroid)
-            # Rotate points
-            centered_points = curr_tp["points"] - curr_center
-            curr_tp["points"] = centered_points @ rot_y.T + curr_center
-
-            # Rotate normals if they exist (direction vectors, no translation)
-            if curr_tp.get("normals") is not None:
-                curr_tp["normals"] = curr_tp["normals"] @ rot_y.T
-
-            # Rotate dense points if they exist
-            if curr_tp.get("dense_points") is not None:
-                centered_dense = curr_tp["dense_points"] - curr_center
-                curr_tp["dense_points"] = centered_dense @ rot_y.T + curr_center
-
-            # Rotate leaf tip
-            centered_tip = curr_tp["leaf_tip"] - curr_center
-            curr_tp["leaf_tip"] = centered_tip @ rot_y.T + curr_center
-
-            # Track transformation
-            transformations.append(
-                {
-                    "stage": "prealign_tip",
-                    "day": curr_tp["day"],
-                    "rotation": rot_y,
-                    "translation": np.zeros(3),
-                    "center": curr_center,
-                }
-            )
-
-        return transformations
+        """Pre-align with leaf tips (wrapper for alignment.prealign_with_leaf_tips)"""
+        return alignment.prealign_with_leaf_tips(timepoints)
 
     def _enforce_downward_facing_normals(self, timepoints):
-        """
-        Enforce that all leaf normals point downward (negative Z-component).
-        This uses the fact that plants are vertically aligned (Z-axis up) and
-        ensures normals represent the outer/abaxial (downward-facing) leaf surface.
-
-        This simple approach replaces complex temporal consistency checks by fixing
-        the fundamental orientation issue at the source, before any alignment.
-
-        Args:
-            timepoints: List of timepoint dictionaries containing 'normals'
-
-        Returns:
-            List of transformation dictionaries (for consistency with other stages)
-        """
-        transformations = []
-
-        for tp in timepoints:
-            if tp.get("normals") is None:
-                transformations.append(
-                    {
-                        "stage": "enforce_downward_normals",
-                        "day": tp["day"],
-                        "flipped": False,
-                    }
-                )
-                continue
-
-            normals = tp["normals"]
-
-            # Compute mean Z-component of normals
-            mean_z = np.mean(normals[:, 2])
-
-            # If pointing upward (positive Z), flip all normals
-            if mean_z > 0:
-                tp["normals"] = -normals
-                flipped = True
-            else:
-                flipped = False
-
-            transformations.append(
-                {
-                    "stage": "enforce_downward_normals",
-                    "day": tp["day"],
-                    "flipped": flipped,
-                    "mean_z_before": mean_z,
-                    "mean_z_after": -mean_z if flipped else mean_z,
-                }
-            )
-
-        return transformations
+        """Enforce downward normals (wrapper for normal_estimation.enforce_downward_facing_normals)"""
+        return normal_estimation.enforce_downward_facing_normals(timepoints)
 
     def _align_dataset(self):
         """
@@ -1463,239 +1048,16 @@ class LeafSequencesDataset(Dataset):
         return dict(info)
 
     def _pca_align(self, pc1, pc2):
-        """
-        PCA-based alignment that doesn't require same number of points.
-        Ensures consistent orientation by aligning to reference (pc2) principal components.
-
-        Args:
-            pc1: First point cloud (centered) - to be aligned
-            pc2: Second point cloud (centered) - reference
-
-        Returns:
-            Rotation matrix to align pc1 to pc2's coordinate system
-        """
-
-        def get_pca(pc):
-            pc_centered = pc - pc.mean(axis=0)
-            U, S, Vt = np.linalg.svd(pc_centered, full_matrices=False)
-            is_sorted = np.all(S[:-1] >= S[1:])
-            if not is_sorted:
-                print("Singular values not sorted descending")
-            return Vt  # rows are components
-
-        def align_components_to_reference(components, reference_components):
-            """Align principal components to match reference orientation"""
-            aligned_components = components.copy()
-
-            for i in range(min(len(components), len(reference_components))):
-                # Check dot product to determine if we need to flip
-                dot_product = np.dot(components[i], reference_components[i])
-
-                # If dot product is negative, flip the component to align with reference
-                if dot_product < 0:
-                    aligned_components[i] = -aligned_components[i]
-
-            return aligned_components
-
-        # Get PCA components for both point clouds
-        R1_raw = get_pca(pc1)
-        R2 = get_pca(pc2)
-
-        # Align pc1 components to match pc2 reference orientation
-        R1 = align_components_to_reference(R1_raw, R2)
-
-        # Compute rotation matrix to align pc1 to pc2
-        R = R2.T @ R1
-
-        # Additional check: ensure rotation doesn't introduce a flip
-        # Check if determinant is negative (indicates reflection/flip)
-        if np.linalg.det(R) < 0:
-            print("Reflection detected: flipping first principal component")
-            # If we have a reflection, flip the last principal component
-            R1[0] = -R1[
-                0
-            ]  # NOTE: this helps for the first timeseries last leaf compared to flipping the third SV
-            R = R2.T @ R1
-
-        # self.check_singular_vector_consistency(R1, R2)
-
-        return R, R1
+        """PCA alignment (wrapper for alignment.pca_align_pair)"""
+        return alignment.pca_align_pair(pc1, pc2)
 
     def _align_pca_to_z_axis(self, timepoints, basis_from_pca=None):
-        """
-        Align the main PCA axis of each timepoint to the positive Z-axis (upward).
-        This makes all leaves have the same inclination (parallel to each other)
-        and ensures leaves are not upside down.
-
-        The main axis direction is checked first - if it points more downward than
-        upward, it is flipped before computing the rotation. This ensures the rotation
-        is always less than 90° and leaves remain right-side up.
-
-        Args:
-            timepoints: List of aligned timepoint dictionaries (modified in-place)
-            basis_from_pca: Optional list of transformation dicts from PCA stage (stage 2)
-                          with "basis" field. If provided, reuses those basis vectors
-                          instead of recomputing PCA.
-
-        Returns:
-            List of transformation dictionaries for each timepoint
-        """
-
-        target_axis = np.array([0, 0, 1])  # Z-axis
-        transformations = []
-
-        for idx, tp in enumerate(timepoints):
-            if tp["points"] is None or len(tp["points"]) < 3:
-                transformations.append(
-                    {
-                        "stage": "align_to_z",
-                        "day": tp["day"],
-                        "rotation": np.eye(3),
-                        "translation": np.zeros(3),
-                        "center": np.zeros(3),
-                    }
-                )
-                continue
-
-            points = tp["points"]
-            center = np.mean(points, axis=0)
-            centered = points - center  # Always compute centered for later rotation
-
-            # Get main axis: either from provided basis or compute PCA
-            basis = None
-            if basis_from_pca is not None and idx < len(basis_from_pca):
-                # Try to reuse basis from stage 2 (PCA alignment)
-                basis = basis_from_pca[idx].get("basis", None)
-
-            if basis is not None:
-                # Reuse the first principal component from stage 2
-                main_axis = basis[0]  # First row is first principal component
-            else:
-                # Compute PCA from scratch
-                U, S, Vt = np.linalg.svd(centered, full_matrices=False)
-                main_axis = Vt[0]  # First principal component (main axis)
-
-            # Normalize
-            main_axis = main_axis / np.linalg.norm(main_axis)
-
-            # Ensure main axis points upward (positive Z direction)
-            # If it points more downward than upward, flip it
-            if np.dot(main_axis, target_axis) < 0:
-                main_axis = -main_axis
-
-            # Compute rotation matrix to align main_axis to Z-axis
-            # Using Rodrigues' rotation formula
-            v = np.cross(main_axis, target_axis)
-            c = np.dot(main_axis, target_axis)
-
-            # Check if vectors are already aligned or opposite
-            if np.abs(c - 1.0) < 1e-8:
-                # Already aligned, no rotation needed
-                transformations.append(
-                    {
-                        "stage": "align_to_z",
-                        "day": tp["day"],
-                        "rotation": np.eye(3),
-                        "translation": np.zeros(3),
-                        "center": center,
-                    }
-                )
-                continue
-            elif np.abs(c + 1.0) < 1e-8:
-                # Vectors are opposite, rotate 180° around any perpendicular axis
-                # Use X-axis as rotation axis
-                rot_matrix = np.array(
-                    [[1, 0, 0], [0, -1, 0], [0, 0, -1]], dtype=np.float64
-                )
-            else:
-                # General case: use Rodrigues' formula
-                s = np.linalg.norm(v)
-                kmat = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
-                rot_matrix = np.eye(3) + kmat + kmat @ kmat * ((1 - c) / (s**2))
-
-            # Apply rotation (centered around leaf centroid)
-            tp["points"] = centered @ rot_matrix.T + center
-
-            # Rotate normals if they exist
-            if tp.get("normals") is not None:
-                tp["normals"] = tp["normals"] @ rot_matrix.T
-
-            # Rotate dense points if they exist
-            if tp.get("dense_points") is not None:
-                centered_dense = tp["dense_points"] - center
-                tp["dense_points"] = centered_dense @ rot_matrix.T + center
-
-            # Rotate leaf tip if it exists
-            if tp.get("leaf_tip") is not None:
-                centered_tip = tp["leaf_tip"] - center
-                tp["leaf_tip"] = centered_tip @ rot_matrix.T + center
-
-            transformations.append(
-                {
-                    "stage": "align_to_z",
-                    "day": tp["day"],
-                    "rotation": rot_matrix,
-                    "translation": np.zeros(3),
-                    "center": center,
-                }
-            )
-
-        return transformations
+        """Align main axis to Z (wrapper for alignment.align_main_axis_to_z)"""
+        return alignment.align_main_axis_to_z(timepoints, basis_from_pca)
 
     def _align_leaves_to_xy_plane(self, timepoints):
-        """
-        Align each timepoint independently so its lowest point is at z=0.
-        This ensures leaves are positioned at a consistent height for visualization
-        while preserving vertical growth differences between timepoints.
-
-        Args:
-            timepoints: List of aligned timepoint dictionaries (modified in-place)
-
-        Returns:
-            List of transformation dictionaries for each timepoint
-        """
-        transformations = []
-
-        for tp in timepoints:
-            if tp["points"] is not None and len(tp["points"]) > 0:
-                # Find minimum z-coordinate for this timepoint
-                min_z = np.min(tp["points"][:, 2])
-                vertical_shift = np.array([0, 0, -min_z])
-
-                # Shift points
-                tp["points"] = tp["points"] + vertical_shift
-
-                # Shift dense points
-                if tp.get("dense_points") is not None:
-                    tp["dense_points"] = tp["dense_points"] + vertical_shift
-
-                # Shift leaf tip
-                if tp.get("leaf_tip") is not None:
-                    tp["leaf_tip"] = tp["leaf_tip"] + vertical_shift
-
-                # Normals are direction vectors - no translation needed
-
-                transformations.append(
-                    {
-                        "stage": "vertical_align",
-                        "day": tp["day"],
-                        "rotation": np.eye(3),
-                        "translation": vertical_shift,
-                        "center": np.zeros(3),
-                    }
-                )
-            else:
-                transformations.append(
-                    {
-                        "stage": "vertical_align",
-                        "day": tp["day"],
-                        "rotation": np.eye(3),
-                        "translation": np.zeros(3),
-                        "center": np.zeros(3),
-                    }
-                )
-
-        return transformations
+        """Align to XY plane (wrapper for alignment.align_to_xy_plane)"""
+        return alignment.align_to_xy_plane(timepoints)
 
     def align_leaf_sequence(
         self,
@@ -1704,187 +1066,23 @@ class LeafSequencesDataset(Dataset):
         plot_pairwise_alignment=False,
     ):
         """
-        Align leaf sequence using PCA-based registration with sequential alignment.
-        Preserves scale differences to show growth over time.
-        Only removes rotation and translation.
-        Works with different numbers of points between timepoints.
+        Align leaf sequence using sequential PCA (wrapper for alignment.align_sequence_pairwise_pca).
 
-        Two-stage alignment process (after pre-alignment):
-        1. Sequential PCA alignment: each timepoint is aligned to the previous one (i→i-1)
-           rather than all to the first reference. This prevents alternating alignment behavior
-           for leaves with changing shape.
-        2. Normal-aware Z-rotation: if normals are available, computes optimal rotation angle
-           around Z-axis to align normal directions, ensuring leaves maintain consistent
-           face orientation across time (e.g., upper surface always points in same direction).
-
-        Note: This assumes timepoints have been pre-aligned using leaf tips (Stage 0) and
-        have consistent normals (Stage 1).
         Args:
             leaf_timeseries: Leaf timeseries dict from dataset
-            normal_matching_percentile_threshold: Distance threshold for matching normals (if None, uses 75th percentile)
-            plot_pairwise_alignment: If True, plot pairwise alignment for each timepoint to reference (for debugging)
+            normal_matching_percentile_threshold: Distance threshold for matching normals
+            plot_pairwise_alignment: If True, plot pairwise alignment (for debugging)
 
         Returns:
-            List of aligned point clouds and rotation matrices
+            aligned_timepoints: List of aligned timepoint dicts
+            transformations: List of transformation dicts
         """
         timepoints = leaf_timeseries["timepoints"]
-        if len(timepoints) < 2:
-            return timepoints, []
 
-        aligned_timepoints = []
-        transformations = []
-
-        # Sequential alignment: align each timepoint to the previous one
-        for i, tp in enumerate(timepoints):
-            points = tp["points"]
-            center = np.mean(points, axis=0)
-            centered = points - center
-
-            if i == 0:
-                # First timepoint stays as reference (just centered to its own center)
-                ref_center = center
-                aligned_points = points  # Keep at original position
-                rotation_matrix = np.eye(3)
-                basis = np.eye(3)
-            else:
-                # Align to previous aligned timepoint
-                prev_aligned_tp = aligned_timepoints[i - 1]
-                ref_points = prev_aligned_tp["points"]
-                ref_center = np.mean(ref_points, axis=0)
-                ref_centered = ref_points - ref_center
-
-                # Find optimal rotation using PCA alignment
-                rotation_matrix, basis = self._pca_align(centered, ref_centered)
-
-                # Use normals to compute optimal Z-axis rotation (if available)
-                # PCA aligns the leaf plane correctly, but we need to align the normal direction
-                if (
-                    tp.get("normals") is not None
-                    and prev_aligned_tp.get("normals") is not None
-                ):
-                    curr_normals = tp["normals"]
-                    prev_normals = prev_aligned_tp["normals"]
-
-                    # Rotate normals using the computed rotation
-                    rotated_normals = curr_normals @ rotation_matrix.T
-
-                    # Find nearest neighbors to match normals
-                    from scipy.spatial import cKDTree
-
-                    ref_tree = cKDTree(ref_centered + ref_center)
-                    aligned_points_temp = centered @ rotation_matrix.T + ref_center
-                    distances, indices = ref_tree.query(aligned_points_temp, k=1)
-
-                    # Use reliable matches for computing average direction
-                    max_distance = np.percentile(
-                        distances, normal_matching_percentile_threshold
-                    )
-                    reliable_matches = distances < max_distance
-
-                    if np.any(reliable_matches):
-                        # Compute average normal direction for current timepoint (after PCA rotation)
-                        curr_avg_normal = np.mean(
-                            rotated_normals[reliable_matches], axis=0
-                        )
-                        curr_avg_normal = curr_avg_normal / (
-                            np.linalg.norm(curr_avg_normal) + 1e-8
-                        )
-
-                        # Compute average normal direction for previous timepoint
-                        matched_prev_normals = prev_normals[indices[reliable_matches]]
-                        prev_avg_normal = np.mean(matched_prev_normals, axis=0)
-                        prev_avg_normal = prev_avg_normal / (
-                            np.linalg.norm(prev_avg_normal) + 1e-8
-                        )
-
-                        # Project normals onto XY plane (since we only rotate around Z)
-                        curr_xy = curr_avg_normal[:2]
-                        prev_xy = prev_avg_normal[:2]
-
-                        # Compute rotation angle around Z-axis to align current to previous
-                        # Using atan2 to get the angle between the two vectors in XY plane
-                        curr_angle = np.arctan2(curr_xy[1], curr_xy[0])
-                        prev_angle = np.arctan2(prev_xy[1], prev_xy[0])
-                        rotation_angle = prev_angle - curr_angle
-
-                        # Create rotation matrix around Z-axis
-                        cos_theta = np.cos(rotation_angle)
-                        sin_theta = np.sin(rotation_angle)
-                        rot_z = np.array(
-                            [
-                                [cos_theta, -sin_theta, 0],
-                                [sin_theta, cos_theta, 0],
-                                [0, 0, 1],
-                            ],
-                            dtype=np.float64,
-                        )
-
-                        # Apply Z-rotation to the PCA rotation
-                        rotation_matrix = rot_z @ rotation_matrix
-
-                # Apply rotation and translate to previous timepoint's center
-                aligned_points = centered @ rotation_matrix.T + ref_center
-
-            # Transform dense points if they exist
-            # Use same center as sparse points for perfect alignment
-            aligned_dense_points = None
-            if tp.get("dense_points") is not None:
-                dense_points = tp["dense_points"]
-                dense_centered = dense_points - center  # Use sparse points center!
-                if i == 0:
-                    aligned_dense_points = dense_points  # Keep at original position
-                else:
-                    aligned_dense_points = (
-                        dense_centered @ rotation_matrix.T + ref_center
-                    )
-
-            # Transform leaf tip if it exists
-            aligned_leaf_tip = None
-            if tp["leaf_tip"] is not None:
-                original_tip = tp["leaf_tip"]
-                # Apply same transformation as points: center, rotate, translate
-                centered_tip = original_tip - center
-                if i == 0:
-                    aligned_leaf_tip = original_tip  # Keep at original position
-                else:
-                    aligned_leaf_tip = centered_tip @ rotation_matrix.T + ref_center
-
-            # Transform normals if they exist (normals are direction vectors, don't translate)
-            aligned_normals = None
-            if tp.get("normals") is not None:
-                if i == 0:
-                    aligned_normals = tp[
-                        "normals"
-                    ]  # First timepoint normals stay as is
-                else:
-                    # Rotate normals (no translation for direction vectors)
-                    aligned_normals = tp["normals"] @ rotation_matrix.T
-
-            # Preserve original timepoint structure
-            aligned_tp = tp.copy()
-            aligned_tp["points"] = aligned_points
-            aligned_tp["dense_points"] = aligned_dense_points
-            aligned_tp["leaf_tip"] = aligned_leaf_tip
-            aligned_tp["normals"] = aligned_normals
-            aligned_timepoints.append(aligned_tp)
-
-            # Store transformation in standard format for compose_transformations
-            # Transform: p' = (p - center) @ rotation.T + ref_center
-            # Standard: p' = (p - center) @ rotation.T + center + translation
-            # Therefore: translation = ref_center - center
-            transformations.append(
-                {
-                    "stage": "pca_align",
-                    "day": tp["day"],
-                    "rotation": rotation_matrix,
-                    "translation": ref_center - center,
-                    "center": center,
-                    "basis": basis,
-                    "original_center": center,
-                    "reference_center": ref_center,
-                    "is_reference": i == 0,
-                }
-            )
+        # Use alignment module function
+        aligned_timepoints, transformations = alignment.align_sequence_pairwise_pca(
+            timepoints, normal_matching_percentile_threshold
+        )
 
         # Plot pairwise alignment (for sequential alignment, plot each pair i-1 -> i)
         if plot_pairwise_alignment:
