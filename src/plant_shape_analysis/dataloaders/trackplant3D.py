@@ -995,8 +995,9 @@ class LeafSequencesDataset(Dataset):
         2. Align main PCA axis to Z-axis
            - Gets leaf standing vertically using corrected PCA basis
            - No additional flipping needed (orientation correct from Stage 1)
-        3. Rotate around Z-axis using normals
-           - Uses consistent normals from plant alignment to fix rotational orientation
+        3. Sequential pairwise alignment with normals
+           - Aligns each timepoint to previous using corrected PCA basis
+           - Includes normal-aware Z-rotation for consistent face orientation
         4. Align base to origin
            - Uses lowest 1% of points to robustly estimate base location
            - Brings base centroid to origin (0,0,0)
@@ -1027,9 +1028,9 @@ class LeafSequencesDataset(Dataset):
                 )
                 all_transformations.append(("align_to_z", stage2_trans))
 
-                # Stage 3: Rotate around Z-axis using normal consistency
-                stage3_trans = self._align_z_rotation_with_normals(aligned_timepoints)
-                all_transformations.append(("z_rotation_normals", stage3_trans))
+                # Stage 3: Sequential Z-axis rotation alignment
+                stage3_trans = self._align_z_rotation_sequential(aligned_timepoints)
+                all_transformations.append(("z_rotation_sequential", stage3_trans))
 
                 # Stage 4: Align base to origin
                 stage4_trans = self._align_base_to_origin(aligned_timepoints)
@@ -1104,6 +1105,14 @@ class LeafSequencesDataset(Dataset):
         """Align base to origin (wrapper for alignment.align_base_to_origin)"""
         return alignment.align_base_to_origin(timepoints, base_percentile)
 
+    def _align_z_rotation_sequential(
+        self, timepoints, normal_matching_percentile_threshold=75, use_normals=True
+    ):
+        """Sequential Z-axis rotation (wrapper for alignment.align_z_rotation_sequential)"""
+        return alignment.align_z_rotation_sequential(
+            timepoints, normal_matching_percentile_threshold, use_normals
+        )
+
     def _align_z_rotation_with_normals(
         self, timepoints, normal_matching_percentile_threshold=75
     ):
@@ -1111,6 +1120,31 @@ class LeafSequencesDataset(Dataset):
         return alignment.align_z_rotation_with_normals(
             timepoints, normal_matching_percentile_threshold
         )
+
+    def _align_sequence_pairwise_with_basis(
+        self, timepoints, initial_basis_trans, normal_matching_percentile_threshold=75
+    ):
+        """
+        Align sequence using pairwise PCA with pre-computed basis from Stage 1.
+
+        Args:
+            timepoints: List of timepoint dictionaries
+            initial_basis_trans: List of transformations from Stage 1 with 'basis' field
+            normal_matching_percentile_threshold: Threshold for normal matching
+
+        Returns:
+            List of transformation dictionaries
+        """
+        # Extract basis matrices from Stage 1 transformations
+        initial_basis = [trans["basis"] for trans in initial_basis_trans]
+
+        # Call pairwise PCA alignment with pre-computed basis
+        # Note: align_sequence_pairwise_pca modifies timepoints in-place
+        _, transformations = alignment.align_sequence_pairwise_pca(
+            timepoints, normal_matching_percentile_threshold, initial_basis
+        )
+
+        return transformations
 
     def align_leaf_sequence(
         self,

@@ -95,6 +95,7 @@ def pca_align_pair(pc1: np.ndarray, pc2: np.ndarray) -> Tuple[np.ndarray, np.nda
 def align_sequence_pairwise_pca(
     timepoints: List[Dict[str, Any]],
     normal_matching_percentile_threshold: int = 75,
+    initial_basis: Optional[List[np.ndarray]] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
     Align sequence using PCA-based registration with sequential alignment.
@@ -111,6 +112,8 @@ def align_sequence_pairwise_pca(
     Args:
         timepoints: List of timepoint dictionaries containing 'points', 'normals', etc.
         normal_matching_percentile_threshold: Distance threshold percentile for matching normals
+        initial_basis: Optional list of pre-computed basis matrices (3x3) for each timepoint.
+                      If provided, uses these instead of computing PCA from scratch.
 
     Returns:
         aligned_timepoints: List of aligned timepoint dictionaries
@@ -133,7 +136,11 @@ def align_sequence_pairwise_pca(
             ref_center = center
             aligned_points = points  # Keep at original position
             rotation_matrix = np.eye(3)
-            basis = np.eye(3)
+            # Use pre-computed basis if provided, otherwise use identity
+            if initial_basis is not None and i < len(initial_basis):
+                basis = initial_basis[i]
+            else:
+                basis = np.eye(3)
         else:
             # Align to previous aligned timepoint
             prev_aligned_tp = aligned_timepoints[i - 1]
@@ -141,8 +148,18 @@ def align_sequence_pairwise_pca(
             ref_center = np.mean(ref_points, axis=0)
             ref_centered = ref_points - ref_center
 
-            # Find optimal rotation using PCA alignment
-            rotation_matrix, basis = pca_align_pair(centered, ref_centered)
+            # Use pre-computed basis if provided, otherwise compute PCA
+            if initial_basis is not None and i < len(initial_basis):
+                # Use pre-computed basis for current timepoint
+                curr_basis = initial_basis[i]
+                # Get reference basis from previous transformation
+                ref_basis = transformations[i - 1]["basis"]
+                # Compute rotation to align current basis to reference
+                rotation_matrix = ref_basis.T @ curr_basis
+                basis = curr_basis  # Store the basis for this timepoint
+            else:
+                # Find optimal rotation using PCA alignment
+                rotation_matrix, basis = pca_align_pair(centered, ref_centered)
 
             # Use normals to compute optimal Z-axis rotation (if available)
             # PCA aligns the object plane correctly, but we need to align the normal direction
@@ -643,6 +660,147 @@ def align_main_axis_to_z(
                 "rotation": rot_matrix,
                 "translation": np.zeros(3),
                 "center": center,
+            }
+        )
+
+    return transformations
+
+
+def align_z_rotation_sequential(
+    timepoints: List[Dict[str, Any]],
+    normal_matching_percentile_threshold: int = 75,
+    use_normals: bool = True
+) -> List[Dict[str, Any]]:
+    """
+    Sequential alignment with Z-axis rotation only.
+
+    Aligns each timepoint to the previous one by computing optimal rotation
+    around Z-axis. Can use either normals or point-based matching.
+
+    This assumes:
+    - Main PCA axis is already aligned to Z-axis
+    - We only want rotation around Z, preserving vertical alignment
+
+    Args:
+        timepoints: List of timepoint dictionaries (modified in-place)
+        normal_matching_percentile_threshold: Distance threshold percentile for matching
+        use_normals: If True, use normals for alignment. If False, use point matching.
+
+    Returns:
+        List of transformation dictionaries for each timepoint
+    """
+    from scipy.spatial import cKDTree
+
+    if len(timepoints) < 2:
+        return [
+            {
+                "stage": "z_rotation_sequential",
+                "day": timepoints[0]["day"],
+                "rotation": np.eye(3),
+                "translation": np.zeros(3),
+                "center": np.mean(timepoints[0]["points"], axis=0) if timepoints[0]["points"] is not None else np.zeros(3),
+                "rotation_angle_deg": 0.0,
+            }
+        ]
+
+    transformations = []
+
+    # First timepoint is reference
+    center0 = np.mean(timepoints[0]["points"], axis=0)
+    transformations.append(
+        {
+            "stage": "z_rotation_sequential",
+            "day": timepoints[0]["day"],
+            "rotation": np.eye(3),
+            "translation": np.zeros(3),
+            "center": center0,
+            "rotation_angle_deg": 0.0,
+        }
+    )
+
+    # Sequential alignment: align each timepoint to previous one
+    for i in range(1, len(timepoints)):
+        prev_tp = timepoints[i - 1]
+        curr_tp = timepoints[i]
+
+        curr_points = curr_tp["points"]
+        prev_points = prev_tp["points"]
+        center = np.mean(curr_points, axis=0)
+
+        rotation_angle = 0.0
+
+        # Try to use normals if available and requested
+        if (
+            use_normals
+            and curr_tp.get("normals") is not None
+            and prev_tp.get("normals") is not None
+            and len(curr_tp["normals"]) > 0
+            and len(prev_tp["normals"]) > 0
+        ):
+            curr_normals = curr_tp["normals"]
+            prev_normals = prev_tp["normals"]
+
+            # Find nearest neighbors to match normals
+            prev_tree = cKDTree(prev_points)
+            distances, indices = prev_tree.query(curr_points, k=1)
+
+            # Use reliable matches for computing average direction
+            max_distance = np.percentile(distances, normal_matching_percentile_threshold)
+            reliable_matches = distances < max_distance
+
+            if np.any(reliable_matches):
+                # Compute average normal direction for current timepoint
+                curr_avg_normal = np.mean(curr_normals[reliable_matches], axis=0)
+                curr_avg_normal = curr_avg_normal / (np.linalg.norm(curr_avg_normal) + 1e-8)
+
+                # Compute average normal direction for previous timepoint
+                matched_prev_normals = prev_normals[indices[reliable_matches]]
+                prev_avg_normal = np.mean(matched_prev_normals, axis=0)
+                prev_avg_normal = prev_avg_normal / (np.linalg.norm(prev_avg_normal) + 1e-8)
+
+                # Project normals onto XY plane (since we only rotate around Z)
+                curr_xy = curr_avg_normal[:2]
+                prev_xy = prev_avg_normal[:2]
+
+                # Compute rotation angle around Z-axis to align current to previous
+                curr_angle = np.arctan2(curr_xy[1], curr_xy[0])
+                prev_angle = np.arctan2(prev_xy[1], prev_xy[0])
+                rotation_angle = prev_angle - curr_angle
+
+        # Create rotation matrix around Z-axis
+        cos_theta = np.cos(rotation_angle)
+        sin_theta = np.sin(rotation_angle)
+        rot_z = np.array(
+            [[cos_theta, -sin_theta, 0], [sin_theta, cos_theta, 0], [0, 0, 1]],
+            dtype=np.float64,
+        )
+
+        # Apply rotation around centroid
+        centered = curr_points - center
+        curr_tp["points"] = centered @ rot_z.T + center
+
+        # Rotate normals
+        if curr_tp.get("normals") is not None:
+            curr_tp["normals"] = curr_tp["normals"] @ rot_z.T
+
+        # Rotate dense points if they exist
+        if curr_tp.get("dense_points") is not None:
+            centered_dense = curr_tp["dense_points"] - center
+            curr_tp["dense_points"] = centered_dense @ rot_z.T + center
+
+        # Rotate leaf tip if it exists
+        if curr_tp.get("leaf_tip") is not None:
+            centered_tip = curr_tp["leaf_tip"] - center
+            curr_tp["leaf_tip"] = centered_tip @ rot_z.T + center
+
+        transformations.append(
+            {
+                "stage": "z_rotation_sequential",
+                "day": curr_tp["day"],
+                "rotation": rot_z,
+                "translation": np.zeros(3),
+                "center": center,
+                "rotation_angle_deg": np.degrees(rotation_angle),
             }
         )
 
