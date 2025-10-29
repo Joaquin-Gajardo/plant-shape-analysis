@@ -371,80 +371,85 @@ def visualize_leaf_sequence(
 
         # Draw principal axes from transformation["basis"] if available
         if show_principal_axes:
-            # Get transformation stages from leaf_timeseries
-            transformation_stages = leaf_timeseries.get("transformation_stages", None)
+            basis = None
 
-            if transformation_stages is not None and len(transformation_stages) > 0:
-                basis = None
-                # Find PCA alignment stage (has "basis" field) and get initial basis
-                for stage_name, stage_trans in transformation_stages:
-                    if stage_name == "pca_align" and stage_trans is not None:
-                        # Get transformation for current timepoint
-                        if i < len(stage_trans):
-                            trans_info = stage_trans[i]
-                            basis = trans_info.get("basis", None)
-                        break
+            # First, try to get basis directly from timepoint data
+            if timepoint.get("basis") is not None:
+                basis = timepoint["basis"]
+            else:
+                # Fallback: Get transformation stages from leaf_timeseries
+                transformation_stages = leaf_timeseries.get("transformation_stages", None)
 
-                # Transform basis through subsequent stages (align_to_z, vertical_align)
-                # These only apply rotations to direction vectors (no translation)
-                if basis is not None:
-                    basis_transformed = basis.copy()
-
+                if transformation_stages is not None and len(transformation_stages) > 0:
+                    # Find PCA alignment stage (has "basis" field) and get initial basis
                     for stage_name, stage_trans in transformation_stages:
-                        # Skip until we've passed pca_align
-                        if stage_name == "pca_align":
-                            continue
+                        if stage_name == "pca_align" and stage_trans is not None:
+                            # Get transformation for current timepoint
+                            if i < len(stage_trans):
+                                trans_info = stage_trans[i]
+                                basis = trans_info.get("basis", None)
+                            break
 
-                        # Apply rotation from subsequent stages
-                        if stage_trans is not None and i < len(stage_trans):
-                            trans_info = stage_trans[i]
-                            R = trans_info.get("rotation", None)
-                            if R is not None:
-                                # Transform each basis vector: basis' = basis @ R.T
-                                basis_transformed = basis_transformed @ R.T
+                    # Transform basis through subsequent stages (align_to_z, vertical_align)
+                    # These only apply rotations to direction vectors (no translation)
+                    if basis is not None:
+                        basis_transformed = basis.copy()
 
-                    basis = basis_transformed
+                        for stage_name, stage_trans in transformation_stages:
+                            # Skip until we've passed pca_align
+                            if stage_name == "pca_align":
+                                continue
 
-                # Draw the principal axes arrows
-                if basis is not None:
-                    # Apply yaw rotation to basis vectors if needed
-                    if R_z is not None:
-                        basis = basis @ R_z.T
+                            # Apply rotation from subsequent stages
+                            if stage_trans is not None and i < len(stage_trans):
+                                trans_info = stage_trans[i]
+                                R = trans_info.get("rotation", None)
+                                if R is not None:
+                                    # Transform each basis vector: basis' = basis @ R.T
+                                    basis_transformed = basis_transformed @ R.T
 
-                    arrow_origin = points.mean(axis=0)
-                    arrow_origin[1] += i * spacing
-                    axis_colors = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-                    for j in range(3):
-                        axis_vec = basis[
-                            j
-                        ]  # Row j is the j-th principal axis (now fully transformed)
-                        length = 10  # Scale for visualization
-                        arrow = o3d.geometry.TriangleMesh.create_arrow(
-                            cylinder_radius=0.3,
-                            cone_radius=0.6,
-                            cylinder_height=length * 0.8,
-                            cone_height=length * 0.2,
+                        basis = basis_transformed
+
+            # Draw the principal axes arrows
+            if basis is not None:
+                # Apply yaw rotation to basis vectors if needed
+                if R_z is not None:
+                    basis = basis @ R_z.T
+
+                arrow_origin = points.mean(axis=0)
+                arrow_origin[1] += i * spacing
+                axis_colors = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+                for j in range(3):
+                    axis_vec = basis[
+                        j
+                    ]  # Row j is the j-th principal axis (now fully transformed)
+                    length = 10  # Scale for visualization
+                    arrow = o3d.geometry.TriangleMesh.create_arrow(
+                        cylinder_radius=0.3,
+                        cone_radius=0.6,
+                        cylinder_height=length * 0.8,
+                        cone_height=length * 0.2,
+                    )
+                    # Align arrow with axis_vec
+                    z_axis = np.array([0, 0, 1])
+                    axis_vec_norm = axis_vec / np.linalg.norm(axis_vec)
+                    v = np.cross(z_axis, axis_vec_norm)
+                    c = np.dot(z_axis, axis_vec_norm)
+                    if np.linalg.norm(v) < 1e-8:
+                        R = np.eye(3)
+                    else:
+                        vx = np.array(
+                            [[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]]
                         )
-                        # Align arrow with axis_vec
-                        z_axis = np.array([0, 0, 1])
-                        axis_vec_norm = axis_vec / np.linalg.norm(axis_vec)
-                        v = np.cross(z_axis, axis_vec_norm)
-                        c = np.dot(z_axis, axis_vec_norm)
-                        if np.linalg.norm(v) < 1e-8:
-                            R = np.eye(3)
-                        else:
-                            vx = np.array(
-                                [[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]]
-                            )
-                            R = (
-                                np.eye(3)
-                                + vx
-                                + vx @ vx * ((1 - c) / (np.linalg.norm(v) ** 2))
-                            )
-                        arrow.rotate(R, center=np.zeros(3))
-                        arrow.translate(arrow_origin)
-                        arrow.paint_uniform_color(axis_colors[j])
-                        timepoint_geometries.append(arrow)
+                        R = (
+                            np.eye(3)
+                            + vx
+                            + vx @ vx * ((1 - c) / (np.linalg.norm(v) ** 2))
+                        )
+                    arrow.rotate(R, center=np.zeros(3))
+                    arrow.translate(arrow_origin)
+                    arrow.paint_uniform_color(axis_colors[j])
+                    timepoint_geometries.append(arrow)
 
         # Apply yaw rotation to all geometries for this timepoint
         if R_z is not None:
