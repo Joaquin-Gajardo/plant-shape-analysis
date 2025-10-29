@@ -13,7 +13,6 @@ from plant_shape_analysis.alignment.pca_alignment import (
     compute_pca_basis,
     correct_pca_axis_with_stem,
     pca_align_pair,
-    prealign_with_leaf_tips,
 )
 from plant_shape_analysis.alignment.stem_based_alignment import (
     align_plant_sequence_stem_based,
@@ -27,7 +26,6 @@ __all__ = [
     "align_plant_sequence_stem_based",
     "pca_align_pair",
     "align_sequence_pairwise_pca",
-    "prealign_with_leaf_tips",
     "align_main_axis_to_z",
     "align_z_rotation_with_normals",
     "align_z_rotation_sequential",

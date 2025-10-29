@@ -5,7 +5,7 @@ This module provides utilities for estimating surface normals and ensuring
 they remain consistent across temporal sequences and organ boundaries.
 """
 
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 import numpy as np
 import open3d as o3d
@@ -56,7 +56,9 @@ def estimate_normals_for_timeseries(
         print(
             f"Warning: Normals already present in {object_type} dataset. Re-estimating anyway."
         )
-        print("  (Set estimate_normals=False to skip estimation and use loaded normals)")
+        print(
+            "  (Set estimate_normals=False to skip estimation and use loaded normals)"
+        )
 
     print(f"Estimating normals for all {object_type}s in the dataset...")
     for ts in timeseries:
@@ -159,58 +161,3 @@ def enforce_temporal_normal_consistency(
 
         # Update normals in timepoint
         curr_tp["normals"] = curr_normals
-
-
-def enforce_downward_facing_normals(
-    timepoints: List[Dict[str, Any]]
-) -> List[Dict[str, Any]]:
-    """
-    Enforce that all normals point downward (negative Z-component).
-    This uses the fact that plants are vertically aligned (Z-axis up) and
-    ensures normals represent the outer/abaxial (downward-facing) surface.
-
-    This simple approach replaces complex temporal consistency checks by fixing
-    the fundamental orientation issue at the source, before any alignment.
-
-    Args:
-        timepoints: List of timepoint dictionaries containing 'normals'
-
-    Returns:
-        List of transformation dictionaries (for consistency with other stages)
-    """
-    transformations = []
-
-    for tp in timepoints:
-        if tp.get("normals") is None:
-            transformations.append(
-                {
-                    "stage": "enforce_downward_normals",
-                    "day": tp["day"],
-                    "flipped": False,
-                }
-            )
-            continue
-
-        normals = tp["normals"]
-
-        # Compute mean Z-component of normals
-        mean_z = np.mean(normals[:, 2])
-
-        # If pointing upward (positive Z), flip all normals
-        if mean_z > 0:
-            tp["normals"] = -normals
-            flipped = True
-        else:
-            flipped = False
-
-        transformations.append(
-            {
-                "stage": "enforce_downward_normals",
-                "day": tp["day"],
-                "flipped": flipped,
-                "mean_z_before": mean_z,
-                "mean_z_after": -mean_z if flipped else mean_z,
-            }
-        )
-
-    return transformations

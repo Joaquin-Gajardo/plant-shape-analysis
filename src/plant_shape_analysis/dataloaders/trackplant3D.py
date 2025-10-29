@@ -975,14 +975,6 @@ class LeafSequencesDataset(Dataset):
             self.leaf_timeseries, object_type="leaf"
         )
 
-    def _prealign_with_leaf_tips(self, timepoints):
-        """Pre-align with leaf tips (wrapper for alignment.prealign_with_leaf_tips)"""
-        return alignment.prealign_with_leaf_tips(timepoints)
-
-    def _enforce_downward_facing_normals(self, timepoints):
-        """Enforce downward normals (wrapper for normal_estimation.enforce_downward_facing_normals)"""
-        return normal_estimation.enforce_downward_facing_normals(timepoints)
-
     def _align_dataset(self):
         """
         Apply PCA-based alignment to all leaf sequences in the dataset.

@@ -286,122 +286,6 @@ def align_sequence_pairwise_pca(
     return aligned_timepoints, transformations
 
 
-def prealign_with_leaf_tips(timepoints: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Pre-align rotation around Y-axis using leaf tip directions.
-    This is done on UNALIGNED data to roughly orient leaves correctly
-    before normal consistency and PCA alignment.
-
-    Uses sequential propagation: aligns each timepoint to the previous one
-    based on the direction from centroid to leaf tip projected onto XZ plane.
-
-    Args:
-        timepoints: List of timepoint dictionaries (modified in-place)
-
-    Returns:
-        List of transformation dictionaries for each timepoint
-    """
-    if len(timepoints) < 2:
-        return [
-            {
-                "stage": "prealign_tip",
-                "day": timepoints[0]["day"],
-                "rotation": np.eye(3),
-                "translation": np.zeros(3),
-                "center": np.zeros(3),
-            }
-        ]
-
-    transformations = []
-
-    # First timepoint is reference
-    transformations.append(
-        {
-            "stage": "prealign_tip",
-            "day": timepoints[0]["day"],
-            "rotation": np.eye(3),
-            "translation": np.zeros(3),
-            "center": np.mean(timepoints[0]["points"], axis=0),
-        }
-    )
-
-    # Sequential propagation: align each timepoint to previous one
-    for i in range(1, len(timepoints)):
-        prev_tp = timepoints[i - 1]
-        curr_tp = timepoints[i]
-
-        curr_center = np.mean(curr_tp["points"], axis=0)
-
-        # Check if both have leaf tips
-        if prev_tp.get("leaf_tip") is None or curr_tp.get("leaf_tip") is None:
-            # No transformation
-            transformations.append(
-                {
-                    "stage": "prealign_tip",
-                    "day": curr_tp["day"],
-                    "rotation": np.eye(3),
-                    "translation": np.zeros(3),
-                    "center": curr_center,
-                }
-            )
-            continue
-
-        # Get centroids
-        prev_center = np.mean(prev_tp["points"], axis=0)
-
-        # Compute direction from centroid to tip
-        prev_direction = prev_tp["leaf_tip"] - prev_center
-        curr_direction = curr_tp["leaf_tip"] - curr_center
-
-        # Project onto XZ plane (we rotate around Y-axis)
-        prev_xz = np.array([prev_direction[0], prev_direction[2]])
-        curr_xz = np.array([curr_direction[0], curr_direction[2]])
-
-        # Compute rotation angle in XZ plane
-        prev_angle = np.arctan2(prev_xz[1], prev_xz[0])  # Z, X
-        curr_angle = np.arctan2(curr_xz[1], curr_xz[0])
-        rotation_angle = prev_angle - curr_angle
-
-        # Create Y-rotation matrix
-        cos_theta = np.cos(rotation_angle)
-        sin_theta = np.sin(rotation_angle)
-        rot_y = np.array(
-            [[cos_theta, 0, sin_theta], [0, 1, 0], [-sin_theta, 0, cos_theta]],
-            dtype=np.float64,
-        )
-
-        # Apply rotation to current timepoint (centered around its own centroid)
-        # Rotate points
-        centered_points = curr_tp["points"] - curr_center
-        curr_tp["points"] = centered_points @ rot_y.T + curr_center
-
-        # Rotate normals if they exist (direction vectors, no translation)
-        if curr_tp.get("normals") is not None:
-            curr_tp["normals"] = curr_tp["normals"] @ rot_y.T
-
-        # Rotate dense points if they exist
-        if curr_tp.get("dense_points") is not None:
-            centered_dense = curr_tp["dense_points"] - curr_center
-            curr_tp["dense_points"] = centered_dense @ rot_y.T + curr_center
-
-        # Rotate leaf tip
-        centered_tip = curr_tp["leaf_tip"] - curr_center
-        curr_tp["leaf_tip"] = centered_tip @ rot_y.T + curr_center
-
-        # Track transformation
-        transformations.append(
-            {
-                "stage": "prealign_tip",
-                "day": curr_tp["day"],
-                "rotation": rot_y,
-                "translation": np.zeros(3),
-                "center": curr_center,
-            }
-        )
-
-    return transformations
-
-
 def correct_pca_axis_with_stem(
     leaf_timepoints: List[Dict[str, Any]], stem_timepoints: List[Dict[str, Any]]
 ) -> List[Dict[str, Any]]:
@@ -669,7 +553,7 @@ def align_main_axis_to_z(
 def align_z_rotation_sequential(
     timepoints: List[Dict[str, Any]],
     normal_matching_percentile_threshold: int = 75,
-    use_normals: bool = True
+    use_normals: bool = True,
 ) -> List[Dict[str, Any]]:
     """
     Sequential alignment with Z-axis rotation only.
@@ -698,7 +582,11 @@ def align_z_rotation_sequential(
                 "day": timepoints[0]["day"],
                 "rotation": np.eye(3),
                 "translation": np.zeros(3),
-                "center": np.mean(timepoints[0]["points"], axis=0) if timepoints[0]["points"] is not None else np.zeros(3),
+                "center": (
+                    np.mean(timepoints[0]["points"], axis=0)
+                    if timepoints[0]["points"] is not None
+                    else np.zeros(3)
+                ),
                 "rotation_angle_deg": 0.0,
             }
         ]
@@ -745,18 +633,24 @@ def align_z_rotation_sequential(
             distances, indices = prev_tree.query(curr_points, k=1)
 
             # Use reliable matches for computing average direction
-            max_distance = np.percentile(distances, normal_matching_percentile_threshold)
+            max_distance = np.percentile(
+                distances, normal_matching_percentile_threshold
+            )
             reliable_matches = distances < max_distance
 
             if np.any(reliable_matches):
                 # Compute average normal direction for current timepoint
                 curr_avg_normal = np.mean(curr_normals[reliable_matches], axis=0)
-                curr_avg_normal = curr_avg_normal / (np.linalg.norm(curr_avg_normal) + 1e-8)
+                curr_avg_normal = curr_avg_normal / (
+                    np.linalg.norm(curr_avg_normal) + 1e-8
+                )
 
                 # Compute average normal direction for previous timepoint
                 matched_prev_normals = prev_normals[indices[reliable_matches]]
                 prev_avg_normal = np.mean(matched_prev_normals, axis=0)
-                prev_avg_normal = prev_avg_normal / (np.linalg.norm(prev_avg_normal) + 1e-8)
+                prev_avg_normal = prev_avg_normal / (
+                    np.linalg.norm(prev_avg_normal) + 1e-8
+                )
 
                 # Project normals onto XY plane (since we only rotate around Z)
                 curr_xy = curr_avg_normal[:2]
