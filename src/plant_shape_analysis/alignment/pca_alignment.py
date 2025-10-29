@@ -500,7 +500,9 @@ def correct_pca_axis_with_stem(
 
         if len(timepoints_with_tips) > 0:
             # Use average direction of timepoints with tips as reference
-            reference_direction = np.mean(growth_directions[timepoints_with_tips], axis=0)
+            reference_direction = np.mean(
+                growth_directions[timepoints_with_tips], axis=0
+            )
             reference_direction = reference_direction / np.linalg.norm(
                 reference_direction
             )
@@ -589,11 +591,6 @@ def align_main_axis_to_z(
         # Normalize
         main_axis = main_axis / np.linalg.norm(main_axis)
 
-        # Ensure main axis points upward (positive Z direction)
-        # If it points more downward than upward, flip it
-        if np.dot(main_axis, target_axis) < 0:
-            main_axis = -main_axis
-
         # Compute rotation matrix to align main_axis to Z-axis
         # Using Rodrigues' rotation formula
         v = np.cross(main_axis, target_axis)
@@ -615,9 +612,7 @@ def align_main_axis_to_z(
         elif np.abs(c + 1.0) < 1e-8:
             # Vectors are opposite, rotate 180° around any perpendicular axis
             # Use X-axis as rotation axis
-            rot_matrix = np.array(
-                [[1, 0, 0], [0, -1, 0], [0, 0, -1]], dtype=np.float64
-            )
+            rot_matrix = np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]], dtype=np.float64)
         else:
             # General case: use Rodrigues' formula
             s = np.linalg.norm(v)
@@ -648,100 +643,6 @@ def align_main_axis_to_z(
                 "rotation": rot_matrix,
                 "translation": np.zeros(3),
                 "center": center,
-            }
-        )
-
-    return transformations
-
-
-def ensure_leaf_tip_up(timepoints: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Ensure leaf tips point upward (positive Z direction) after Z-axis alignment.
-
-    This assumes:
-    - Main PCA axis is already aligned to Z-axis
-    - Leaf tip information is available in timepoints
-
-    If the leaf tip is below the centroid (pointing down), flip the leaf 180° around X-axis.
-
-    Args:
-        timepoints: List of timepoint dictionaries (modified in-place)
-
-    Returns:
-        List of transformation dictionaries for each timepoint
-    """
-    transformations = []
-
-    for tp in timepoints:
-        if tp["points"] is None or len(tp["points"]) == 0:
-            transformations.append(
-                {
-                    "stage": "tip_up",
-                    "day": tp["day"],
-                    "rotation": np.eye(3),
-                    "translation": np.zeros(3),
-                    "flipped": False,
-                }
-            )
-            continue
-
-        # Check if leaf tip exists
-        if tp.get("leaf_tip") is None:
-            transformations.append(
-                {
-                    "stage": "tip_up",
-                    "day": tp["day"],
-                    "rotation": np.eye(3),
-                    "translation": np.zeros(3),
-                    "flipped": False,
-                }
-            )
-            continue
-
-        points = tp["points"]
-        center = np.mean(points, axis=0)
-        leaf_tip = tp["leaf_tip"]
-
-        # Check if tip is above centroid (Z-component)
-        tip_relative_z = leaf_tip[2] - center[2]
-
-        if tip_relative_z < 0:
-            # Tip is below centroid, flip 180° around X-axis
-            # This preserves Z-up but flips the leaf
-            rot_matrix = np.array(
-                [[1, 0, 0], [0, -1, 0], [0, 0, -1]], dtype=np.float64
-            )
-
-            # Apply rotation around centroid
-            centered = points - center
-            tp["points"] = centered @ rot_matrix.T + center
-
-            # Rotate normals if they exist
-            if tp.get("normals") is not None:
-                tp["normals"] = tp["normals"] @ rot_matrix.T
-
-            # Rotate dense points if they exist
-            if tp.get("dense_points") is not None:
-                centered_dense = tp["dense_points"] - center
-                tp["dense_points"] = centered_dense @ rot_matrix.T + center
-
-            # Rotate leaf tip
-            centered_tip = leaf_tip - center
-            tp["leaf_tip"] = centered_tip @ rot_matrix.T + center
-
-            flipped = True
-        else:
-            rot_matrix = np.eye(3)
-            flipped = False
-
-        transformations.append(
-            {
-                "stage": "tip_up",
-                "day": tp["day"],
-                "rotation": rot_matrix,
-                "translation": np.zeros(3),
-                "flipped": flipped,
-                "tip_relative_z_before": tip_relative_z,
             }
         )
 

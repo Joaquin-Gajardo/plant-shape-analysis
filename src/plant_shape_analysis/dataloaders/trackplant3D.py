@@ -994,11 +994,9 @@ class LeafSequencesDataset(Dataset):
            - Fixes sign ambiguity even without leaf tips
         2. Align main PCA axis to Z-axis
            - Gets leaf standing vertically using corrected PCA basis
-        3. Ensure leaf tip faces up
-           - Fixes 180° flips by checking if tip is above centroid
-        4. Rotate around Z-axis using normals
+        3. Rotate around Z-axis using normals
            - Uses consistent normals from plant alignment to fix rotational orientation
-        5. Translate to z=0 plane
+        4. Translate to z=0 plane
            - Final vertical positioning
         """
 
@@ -1018,24 +1016,22 @@ class LeafSequencesDataset(Dataset):
                 )
                 all_transformations.append(("correct_pca_stem", stage1_trans))
 
-                # # Stage 2: Align main PCA axis to Z-axis (make leaves vertical)
-                # # Reuse corrected PCA basis from Stage 1
-                # stage2_trans = self._align_pca_to_z_axis(
-                #     aligned_timepoints, basis_from_pca=stage1_trans, seq_name=sequence_name
-                # )
-                # all_transformations.append(("align_to_z", stage2_trans))
+                # Stage 2: Align main PCA axis to Z-axis (make leaves vertical)
+                # Reuse corrected PCA basis from Stage 1
+                stage2_trans = self._align_pca_to_z_axis(
+                    aligned_timepoints,
+                    basis_from_pca=stage1_trans,
+                    seq_name=sequence_name,
+                )
+                all_transformations.append(("align_to_z", stage2_trans))
 
-                # # Stage 3: Ensure leaf tips face upward (fix 180° flips)
-                # stage3_trans = self._ensure_leaf_tip_up(aligned_timepoints)
-                # all_transformations.append(("tip_up", stage3_trans))
+                # Stage 3: Rotate around Z-axis using normal consistency
+                stage3_trans = self._align_z_rotation_with_normals(aligned_timepoints)
+                all_transformations.append(("z_rotation_normals", stage3_trans))
 
-                # # Stage 4: Rotate around Z-axis using normal consistency
-                # stage4_trans = self._align_z_rotation_with_normals(aligned_timepoints)
-                # all_transformations.append(("z_rotation_normals", stage4_trans))
-
-                # # Stage 5: Translate to z=0 plane
-                # stage5_trans = self._align_leaves_to_xy_plane(aligned_timepoints)
-                # all_transformations.append(("vertical_align", stage5_trans))
+                # Stage 4: Translate to z=0 plane
+                stage4_trans = self._align_leaves_to_xy_plane(aligned_timepoints)
+                all_transformations.append(("vertical_align", stage4_trans))
 
                 # Update the leaf timeseries with aligned data
                 aligned_leaf_ts = leaf_ts.copy()
@@ -1105,10 +1101,6 @@ class LeafSequencesDataset(Dataset):
     def _align_leaves_to_xy_plane(self, timepoints):
         """Align to XY plane (wrapper for alignment.align_to_xy_plane)"""
         return alignment.align_to_xy_plane(timepoints)
-
-    def _ensure_leaf_tip_up(self, timepoints):
-        """Ensure leaf tips face up (wrapper for alignment.ensure_leaf_tip_up)"""
-        return alignment.ensure_leaf_tip_up(timepoints)
 
     def _align_z_rotation_with_normals(
         self, timepoints, normal_matching_percentile_threshold=75
