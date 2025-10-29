@@ -5,7 +5,7 @@ This module provides alignment strategies based on Principal Component Analysis 
 useful for aligning point clouds with similar shapes but different orientations.
 """
 
-from typing import List, Dict, Any, Tuple, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 from scipy.spatial import cKDTree
@@ -58,9 +58,7 @@ def align_components_to_reference(
     return aligned_components
 
 
-def pca_align_pair(
-    pc1: np.ndarray, pc2: np.ndarray
-) -> Tuple[np.ndarray, np.ndarray]:
+def pca_align_pair(pc1: np.ndarray, pc2: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """
     PCA-based alignment that doesn't require same number of points.
     Ensures consistent orientation by aligning to reference (pc2) principal components.
@@ -171,9 +169,7 @@ def align_sequence_pairwise_pca(
 
                 if np.any(reliable_matches):
                     # Compute average normal direction for current timepoint (after PCA rotation)
-                    curr_avg_normal = np.mean(
-                        rotated_normals[reliable_matches], axis=0
-                    )
+                    curr_avg_normal = np.mean(rotated_normals[reliable_matches], axis=0)
                     curr_avg_normal = curr_avg_normal / (
                         np.linalg.norm(curr_avg_normal) + 1e-8
                     )
@@ -273,9 +269,7 @@ def align_sequence_pairwise_pca(
     return aligned_timepoints, transformations
 
 
-def prealign_with_leaf_tips(
-    timepoints: List[Dict[str, Any]]
-) -> List[Dict[str, Any]]:
+def prealign_with_leaf_tips(timepoints: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Pre-align rotation around Y-axis using leaf tip directions.
     This is done on UNALIGNED data to roughly orient leaves correctly
@@ -392,7 +386,9 @@ def prealign_with_leaf_tips(
 
 
 def align_main_axis_to_z(
-    timepoints: List[Dict[str, Any]], basis_from_pca: Optional[List[Dict[str, Any]]] = None
+    timepoints: List[Dict[str, Any]],
+    basis_from_pca: Optional[List[Dict[str, Any]]] = None,
+    seq_name: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Align the main PCA axis of each timepoint to the positive Z-axis (upward).
@@ -406,8 +402,8 @@ def align_main_axis_to_z(
     Args:
         timepoints: List of aligned timepoint dictionaries (modified in-place)
         basis_from_pca: Optional list of transformation dicts from PCA stage
-                      with "basis" field. If provided, reuses those basis vectors
-                      instead of recomputing PCA.
+                      with "basis" field. Used for computing main axis direction.
+        seq_name: Optional sequence name for logging purposes
 
     Returns:
         List of transformation dictionaries for each timepoint

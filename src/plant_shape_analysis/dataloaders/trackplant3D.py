@@ -973,7 +973,9 @@ class LeafSequencesDataset(Dataset):
                 aligned_timepoints = [tp.copy() for tp in leaf_ts["timepoints"]]
 
                 # Stage 1: Align main PCA axis to Z-axis (make leaves vertical)
-                stage1_trans = self._align_pca_to_z_axis(aligned_timepoints)
+                stage1_trans = self._align_pca_to_z_axis(
+                    aligned_timepoints, seq_name=sequence_name
+                )
                 all_transformations.append(("align_to_z", stage1_trans))
 
                 # Stage 2: Ensure leaf tips face upward (fix 180° flips)
@@ -1043,9 +1045,11 @@ class LeafSequencesDataset(Dataset):
         """PCA alignment (wrapper for alignment.pca_align_pair)"""
         return alignment.pca_align_pair(pc1, pc2)
 
-    def _align_pca_to_z_axis(self, timepoints, basis_from_pca=None):
+    def _align_pca_to_z_axis(self, timepoints, basis_from_pca=None, seq_name=None):
         """Align main axis to Z (wrapper for alignment.align_main_axis_to_z)"""
-        return alignment.align_main_axis_to_z(timepoints, basis_from_pca)
+        return alignment.align_main_axis_to_z(
+            timepoints, basis_from_pca=basis_from_pca, seq_name=seq_name
+        )
 
     def _align_leaves_to_xy_plane(self, timepoints):
         """Align to XY plane (wrapper for alignment.align_to_xy_plane)"""
@@ -1055,7 +1059,9 @@ class LeafSequencesDataset(Dataset):
         """Ensure leaf tips face up (wrapper for alignment.ensure_leaf_tip_up)"""
         return alignment.ensure_leaf_tip_up(timepoints)
 
-    def _align_z_rotation_with_normals(self, timepoints, normal_matching_percentile_threshold=75):
+    def _align_z_rotation_with_normals(
+        self, timepoints, normal_matching_percentile_threshold=75
+    ):
         """Align Z rotation with normals (wrapper for alignment.align_z_rotation_with_normals)"""
         return alignment.align_z_rotation_with_normals(
             timepoints, normal_matching_percentile_threshold
