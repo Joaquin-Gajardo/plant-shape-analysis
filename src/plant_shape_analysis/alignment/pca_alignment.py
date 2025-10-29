@@ -385,6 +385,151 @@ def prealign_with_leaf_tips(timepoints: List[Dict[str, Any]]) -> List[Dict[str, 
     return transformations
 
 
+def correct_pca_axis_with_stem(
+    leaf_timepoints: List[Dict[str, Any]], stem_timepoints: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """
+    Correct PCA axis orientation using stem information to determine leaf insertion point.
+
+    This ensures the main PCA axis consistently points from base (insertion) to tip,
+    fixing sign ambiguity issues that can cause flipped leaves even without leaf tips.
+
+    The algorithm:
+    1. Compute PCA for each leaf timepoint
+    2. Find closest stem point to leaf centroid (insertion point)
+    3. Find closest leaf point to that stem point (base)
+    4. Ensure PCA axis points from base to tip (base has negative projection, tip positive)
+    5. Apply temporal consistency check using majority voting for reliability
+
+    Args:
+        leaf_timepoints: List of leaf timepoint dictionaries
+        stem_timepoints: List of stem timepoint dictionaries (same days as leaves)
+
+    Returns:
+        List of transformation dictionaries with corrected "basis" field
+    """
+    transformations = []
+    corrected_bases = []
+
+    # First pass: correct each timepoint independently using stem information
+    for idx, (leaf_tp, stem_tp) in enumerate(zip(leaf_timepoints, stem_timepoints)):
+        points = leaf_tp["points"]
+        center = np.mean(points, axis=0)
+        centered = points - center
+
+        # Compute fresh PCA axes
+        pca_axes = compute_pca_basis(centered)
+        pca_axis = pca_axes[0] / np.linalg.norm(pca_axes[0])
+
+        # Find closest stem point to leaf centroid (insertion point approximation)
+        distances_to_stem = np.linalg.norm(stem_tp["points"] - center, axis=1)
+        closest_stem_point = stem_tp["points"][np.argmin(distances_to_stem)]
+
+        # Find closest leaf point to the closest stem point (base/insertion)
+        distances_to_leaf = np.linalg.norm(points - closest_stem_point, axis=1)
+        closest_leaf_point = points[np.argmin(distances_to_leaf)]
+
+        # Project the base point onto the PCA axis
+        base_centered = closest_leaf_point - center
+        base_projection = np.dot(base_centered, pca_axis)
+
+        # Determine growth direction: PCA axis should point from base → tip
+        # If base has positive projection, flip the axis so base has negative projection
+        if base_projection > 0:
+            growth_direction = -pca_axis
+            flipped = True
+        else:
+            growth_direction = pca_axis
+            flipped = False
+
+        # Store corrected basis (all three principal components)
+        corrected_basis = np.array(
+            [
+                growth_direction,
+                pca_axes[1] / np.linalg.norm(pca_axes[1]),
+                pca_axes[2] / np.linalg.norm(pca_axes[2]),
+            ]
+        )
+
+        # Verify with leaf tip if available
+        verification_passed = True
+        if leaf_tp.get("leaf_tip") is not None:
+            tip_centered = leaf_tp["leaf_tip"] - center
+            tip_projection = np.dot(tip_centered, growth_direction)
+            base_projection_corrected = np.dot(base_centered, growth_direction)
+
+            # Check if base is behind origin and tip is ahead
+            correctly_oriented = base_projection_corrected < 0 and tip_projection > 0
+
+            if not correctly_oriented:
+                # Flip again if verification fails
+                corrected_basis[0] = -corrected_basis[0]
+                verification_passed = False
+
+        corrected_bases.append(corrected_basis)
+        transformations.append(
+            {
+                "stage": "correct_pca_stem",
+                "day": leaf_tp["day"],
+                "rotation": np.eye(3),  # No rotation applied yet, just storing basis
+                "translation": np.zeros(3),
+                "center": center,
+                "basis": corrected_basis,
+                "flipped": flipped,
+                "verification_passed": verification_passed,
+                "base_projection": base_projection,
+            }
+        )
+
+    # Second pass: temporal consistency check using majority voting
+    # This is especially important for timepoints without tips
+    timepoints_without_tips = [
+        i for i, tp in enumerate(leaf_timepoints) if tp.get("leaf_tip") is None
+    ]
+
+    if len(timepoints_without_tips) > 0 and len(timepoints_without_tips) < len(
+        leaf_timepoints
+    ):
+        # Get all growth directions
+        growth_directions = np.array([basis[0] for basis in corrected_bases])
+
+        # Use timepoints WITH tips as reference (more reliable)
+        timepoints_with_tips = [
+            i for i, tp in enumerate(leaf_timepoints) if tp.get("leaf_tip") is not None
+        ]
+
+        if len(timepoints_with_tips) > 0:
+            # Use average direction of timepoints with tips as reference
+            reference_direction = np.mean(growth_directions[timepoints_with_tips], axis=0)
+            reference_direction = reference_direction / np.linalg.norm(
+                reference_direction
+            )
+        else:
+            # Fallback: use majority voting across all timepoints
+            # Compute median direction by checking alignment between all pairs
+            dot_products = growth_directions @ growth_directions.T
+            # For each timepoint, count how many agree with it (dot > 0)
+            agreement_counts = (dot_products > 0).sum(axis=1)
+            # Use the direction with most agreement as reference
+            reference_idx = np.argmax(agreement_counts)
+            reference_direction = growth_directions[reference_idx]
+
+        # Check each timepoint without tip
+        for idx in timepoints_without_tips:
+            current_direction = corrected_bases[idx][0]
+
+            # Check alignment with reference
+            dot_product = np.dot(current_direction, reference_direction)
+
+            if dot_product < 0:
+                # Pointing opposite direction, flip it
+                corrected_bases[idx][0] = -current_direction
+                transformations[idx]["basis"][0] = -current_direction
+                transformations[idx]["temporal_flip"] = True
+
+    return transformations
+
+
 def align_main_axis_to_z(
     timepoints: List[Dict[str, Any]],
     basis_from_pca: Optional[List[Dict[str, Any]]] = None,
@@ -401,7 +546,7 @@ def align_main_axis_to_z(
 
     Args:
         timepoints: List of aligned timepoint dictionaries (modified in-place)
-        basis_from_pca: Optional list of transformation dicts from PCA stage
+        basis_from_pca: Optional list of transformation dicts from previous stage
                       with "basis" field. Used for computing main axis direction.
         seq_name: Optional sequence name for logging purposes
 
@@ -431,11 +576,11 @@ def align_main_axis_to_z(
         # Get main axis: either from provided basis or compute PCA
         basis = None
         if basis_from_pca is not None and idx < len(basis_from_pca):
-            # Try to reuse basis from stage 2 (PCA alignment)
+            # Try to reuse basis from previous stage (e.g., Stage 1 stem correction)
             basis = basis_from_pca[idx].get("basis", None)
 
         if basis is not None:
-            # Reuse the first principal component from stage 2
+            # Reuse the first principal component from previous stage
             main_axis = basis[0]  # First row is first principal component
         else:
             # Compute PCA from scratch

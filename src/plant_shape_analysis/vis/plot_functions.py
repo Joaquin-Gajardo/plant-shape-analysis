@@ -381,23 +381,24 @@ def visualize_leaf_sequence(
                 transformation_stages = leaf_timeseries.get("transformation_stages", None)
 
                 if transformation_stages is not None and len(transformation_stages) > 0:
-                    # Find PCA alignment stage (has "basis" field) and get initial basis
-                    for stage_name, stage_trans in transformation_stages:
-                        if stage_name == "pca_align" and stage_trans is not None:
-                            # Get transformation for current timepoint
-                            if i < len(stage_trans):
-                                trans_info = stage_trans[i]
-                                basis = trans_info.get("basis", None)
-                            break
+                    # Find first stage that has "basis" field and get initial basis
+                    basis_stage_idx = None
+                    for stage_idx, (stage_name, stage_trans) in enumerate(transformation_stages):
+                        if stage_trans is not None and i < len(stage_trans):
+                            trans_info = stage_trans[i]
+                            if trans_info.get("basis") is not None:
+                                basis = trans_info["basis"]
+                                basis_stage_idx = stage_idx
+                                break
 
-                    # Transform basis through subsequent stages (align_to_z, vertical_align)
+                    # Transform basis through subsequent stages
                     # These only apply rotations to direction vectors (no translation)
-                    if basis is not None:
+                    if basis is not None and basis_stage_idx is not None:
                         basis_transformed = basis.copy()
 
-                        for stage_name, stage_trans in transformation_stages:
-                            # Skip until we've passed pca_align
-                            if stage_name == "pca_align":
+                        for stage_idx, (stage_name, stage_trans) in enumerate(transformation_stages):
+                            # Skip stages up to and including the one where we got the basis
+                            if stage_idx <= basis_stage_idx:
                                 continue
 
                             # Apply rotation from subsequent stages

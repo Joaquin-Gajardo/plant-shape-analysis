@@ -10,6 +10,7 @@ from plant_shape_analysis.alignment.pca_alignment import (
     align_to_xy_plane,
     align_z_rotation_with_normals,
     compute_pca_basis,
+    correct_pca_axis_with_stem,
     ensure_leaf_tip_up,
     pca_align_pair,
     prealign_with_leaf_tips,
@@ -32,4 +33,5 @@ __all__ = [
     "align_z_rotation_with_normals",
     "align_to_xy_plane",
     "compute_pca_basis",
+    "correct_pca_axis_with_stem",
 ]
