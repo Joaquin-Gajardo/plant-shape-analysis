@@ -20,9 +20,7 @@ COLOR_MAP = {  # Color mapping for semantic labels to match roughly the TrackPla
 }
 
 
-def visualize_pymeshlab_mesh(
-    ms, window_name: str = "Mesh Visualization"
-):
+def visualize_pymeshlab_mesh(ms, window_name: str = "Mesh Visualization"):
     """
     Visualize a PyMeshLab mesh using Open3D
 
@@ -65,6 +63,8 @@ def visualize_pymeshlab_mesh(
 def visualize_point_cloud(
     points: np.ndarray,
     colors: Optional[np.ndarray] = None,
+    show_coordinate_frame: bool = False,
+    lookat_point: np.ndarray = np.array([0, 0, 0]),
     window_name: str = "Plant Visualization",
 ):
     """
@@ -73,6 +73,8 @@ def visualize_point_cloud(
     Args:
         points: numpy array of shape (n_points, 3)
         colors: optional numpy array of shape (n_points, 3) for custom colors
+        show_coordinate_frame: whether to show a coordinate frame for orientation
+        lookat_point: 3D point to look at in the visualization
         window_name: name for the Open3D visualization window
     """
 
@@ -85,6 +87,7 @@ def visualize_point_cloud(
     else:
         xyz = points
 
+    geometries = []
     plant_pcd = o3d.geometry.PointCloud()
     plant_pcd.points = o3d.utility.Vector3dVector(xyz)
     if has_normals:
@@ -92,7 +95,22 @@ def visualize_point_cloud(
     if colors is not None:
         plant_pcd.colors = o3d.utility.Vector3dVector(colors)
 
-    o3d.visualization.draw_geometries([plant_pcd], window_name=window_name)
+    geometries.append(plant_pcd)
+
+    # Add coordinate frame for orientation
+    if show_coordinate_frame:
+        coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
+            size=2.0, origin=[0, 0, 0]
+        )
+        geometries.append(coord_frame)
+
+    o3d.visualization.draw_geometries(
+        geometries,
+        window_name=window_name,
+        up=[0, 0, 1],
+        front=[1, 0, 0],
+        lookat=lookat_point,
+    )
 
 
 def visualize_mesh_open3d(filename):
