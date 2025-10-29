@@ -92,198 +92,198 @@ def pca_align_pair(pc1: np.ndarray, pc2: np.ndarray) -> Tuple[np.ndarray, np.nda
     return R, R1
 
 
-def align_sequence_pairwise_pca(
-    timepoints: List[Dict[str, Any]],
-    normal_matching_percentile_threshold: int = 75,
-    initial_basis: Optional[List[np.ndarray]] = None,
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """
-    Align sequence using PCA-based registration with sequential alignment.
-    Preserves scale differences to show growth over time.
+# def align_sequence_pairwise_pca(
+#     timepoints: List[Dict[str, Any]],
+#     normal_matching_percentile_threshold: int = 75,
+#     initial_basis: Optional[List[np.ndarray]] = None,
+# ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+#     """
+#     Align sequence using PCA-based registration with sequential alignment.
+#     Preserves scale differences to show growth over time.
 
-    Two-stage alignment process:
-    1. Sequential PCA alignment: each timepoint is aligned to the previous one (i→i-1)
-       rather than all to the first reference. This prevents alternating alignment behavior
-       for objects with changing shape.
-    2. Normal-aware Z-rotation: if normals are available, computes optimal rotation angle
-       around Z-axis to align normal directions, ensuring consistent face orientation
-       across time (e.g., upper surface always points in same direction).
+#     Two-stage alignment process:
+#     1. Sequential PCA alignment: each timepoint is aligned to the previous one (i→i-1)
+#        rather than all to the first reference. This prevents alternating alignment behavior
+#        for objects with changing shape.
+#     2. Normal-aware Z-rotation: if normals are available, computes optimal rotation angle
+#        around Z-axis to align normal directions, ensuring consistent face orientation
+#        across time (e.g., upper surface always points in same direction).
 
-    Args:
-        timepoints: List of timepoint dictionaries containing 'points', 'normals', etc.
-        normal_matching_percentile_threshold: Distance threshold percentile for matching normals
-        initial_basis: Optional list of pre-computed basis matrices (3x3) for each timepoint.
-                      If provided, uses these instead of computing PCA from scratch.
+#     Args:
+#         timepoints: List of timepoint dictionaries containing 'points', 'normals', etc.
+#         normal_matching_percentile_threshold: Distance threshold percentile for matching normals
+#         initial_basis: Optional list of pre-computed basis matrices (3x3) for each timepoint.
+#                       If provided, uses these instead of computing PCA from scratch.
 
-    Returns:
-        aligned_timepoints: List of aligned timepoint dictionaries
-        transformations: List of transformation dictionaries for each timepoint
-    """
-    if len(timepoints) < 2:
-        return timepoints, []
+#     Returns:
+#         aligned_timepoints: List of aligned timepoint dictionaries
+#         transformations: List of transformation dictionaries for each timepoint
+#     """
+#     if len(timepoints) < 2:
+#         return timepoints, []
 
-    aligned_timepoints = []
-    transformations = []
+#     aligned_timepoints = []
+#     transformations = []
 
-    # Sequential alignment: align each timepoint to the previous one
-    for i, tp in enumerate(timepoints):
-        points = tp["points"]
-        center = np.mean(points, axis=0)
-        centered = points - center
+#     # Sequential alignment: align each timepoint to the previous one
+#     for i, tp in enumerate(timepoints):
+#         points = tp["points"]
+#         center = np.mean(points, axis=0)
+#         centered = points - center
 
-        if i == 0:
-            # First timepoint stays as reference (just centered to its own center)
-            ref_center = center
-            aligned_points = points  # Keep at original position
-            rotation_matrix = np.eye(3)
-            # Use pre-computed basis if provided, otherwise use identity
-            if initial_basis is not None and i < len(initial_basis):
-                basis = initial_basis[i]
-            else:
-                basis = np.eye(3)
-        else:
-            # Align to previous aligned timepoint
-            prev_aligned_tp = aligned_timepoints[i - 1]
-            ref_points = prev_aligned_tp["points"]
-            ref_center = np.mean(ref_points, axis=0)
-            ref_centered = ref_points - ref_center
+#         if i == 0:
+#             # First timepoint stays as reference (just centered to its own center)
+#             ref_center = center
+#             aligned_points = points  # Keep at original position
+#             rotation_matrix = np.eye(3)
+#             # Use pre-computed basis if provided, otherwise use identity
+#             if initial_basis is not None and i < len(initial_basis):
+#                 basis = initial_basis[i]
+#             else:
+#                 basis = np.eye(3)
+#         else:
+#             # Align to previous aligned timepoint
+#             prev_aligned_tp = aligned_timepoints[i - 1]
+#             ref_points = prev_aligned_tp["points"]
+#             ref_center = np.mean(ref_points, axis=0)
+#             ref_centered = ref_points - ref_center
 
-            # Use pre-computed basis if provided, otherwise compute PCA
-            if initial_basis is not None and i < len(initial_basis):
-                # Use pre-computed basis for current timepoint
-                curr_basis = initial_basis[i]
-                # Get reference basis from previous transformation
-                ref_basis = transformations[i - 1]["basis"]
-                # Compute rotation to align current basis to reference
-                rotation_matrix = ref_basis.T @ curr_basis
-                basis = curr_basis  # Store the basis for this timepoint
-            else:
-                # Find optimal rotation using PCA alignment
-                rotation_matrix, basis = pca_align_pair(centered, ref_centered)
+#             # Use pre-computed basis if provided, otherwise compute PCA
+#             if initial_basis is not None and i < len(initial_basis):
+#                 # Use pre-computed basis for current timepoint
+#                 curr_basis = initial_basis[i]
+#                 # Get reference basis from previous transformation
+#                 ref_basis = transformations[i - 1]["basis"]
+#                 # Compute rotation to align current basis to reference
+#                 rotation_matrix = ref_basis.T @ curr_basis
+#                 basis = curr_basis  # Store the basis for this timepoint
+#             else:
+#                 # Find optimal rotation using PCA alignment
+#                 rotation_matrix, basis = pca_align_pair(centered, ref_centered)
 
-            # Use normals to compute optimal Z-axis rotation (if available)
-            # PCA aligns the object plane correctly, but we need to align the normal direction
-            if (
-                tp.get("normals") is not None
-                and prev_aligned_tp.get("normals") is not None
-            ):
-                curr_normals = tp["normals"]
-                prev_normals = prev_aligned_tp["normals"]
+#             # Use normals to compute optimal Z-axis rotation (if available)
+#             # PCA aligns the object plane correctly, but we need to align the normal direction
+#             if (
+#                 tp.get("normals") is not None
+#                 and prev_aligned_tp.get("normals") is not None
+#             ):
+#                 curr_normals = tp["normals"]
+#                 prev_normals = prev_aligned_tp["normals"]
 
-                # Rotate normals using the computed rotation
-                rotated_normals = curr_normals @ rotation_matrix.T
+#                 # Rotate normals using the computed rotation
+#                 rotated_normals = curr_normals @ rotation_matrix.T
 
-                # Find nearest neighbors to match normals
-                ref_tree = cKDTree(ref_centered + ref_center)
-                aligned_points_temp = centered @ rotation_matrix.T + ref_center
-                distances, indices = ref_tree.query(aligned_points_temp, k=1)
+#                 # Find nearest neighbors to match normals
+#                 ref_tree = cKDTree(ref_centered + ref_center)
+#                 aligned_points_temp = centered @ rotation_matrix.T + ref_center
+#                 distances, indices = ref_tree.query(aligned_points_temp, k=1)
 
-                # Use reliable matches for computing average direction
-                max_distance = np.percentile(
-                    distances, normal_matching_percentile_threshold
-                )
-                reliable_matches = distances < max_distance
+#                 # Use reliable matches for computing average direction
+#                 max_distance = np.percentile(
+#                     distances, normal_matching_percentile_threshold
+#                 )
+#                 reliable_matches = distances < max_distance
 
-                if np.any(reliable_matches):
-                    # Compute average normal direction for current timepoint (after PCA rotation)
-                    curr_avg_normal = np.mean(rotated_normals[reliable_matches], axis=0)
-                    curr_avg_normal = curr_avg_normal / (
-                        np.linalg.norm(curr_avg_normal) + 1e-8
-                    )
+#                 if np.any(reliable_matches):
+#                     # Compute average normal direction for current timepoint (after PCA rotation)
+#                     curr_avg_normal = np.mean(rotated_normals[reliable_matches], axis=0)
+#                     curr_avg_normal = curr_avg_normal / (
+#                         np.linalg.norm(curr_avg_normal) + 1e-8
+#                     )
 
-                    # Compute average normal direction for previous timepoint
-                    matched_prev_normals = prev_normals[indices[reliable_matches]]
-                    prev_avg_normal = np.mean(matched_prev_normals, axis=0)
-                    prev_avg_normal = prev_avg_normal / (
-                        np.linalg.norm(prev_avg_normal) + 1e-8
-                    )
+#                     # Compute average normal direction for previous timepoint
+#                     matched_prev_normals = prev_normals[indices[reliable_matches]]
+#                     prev_avg_normal = np.mean(matched_prev_normals, axis=0)
+#                     prev_avg_normal = prev_avg_normal / (
+#                         np.linalg.norm(prev_avg_normal) + 1e-8
+#                     )
 
-                    # Project normals onto XY plane (since we only rotate around Z)
-                    curr_xy = curr_avg_normal[:2]
-                    prev_xy = prev_avg_normal[:2]
+#                     # Project normals onto XY plane (since we only rotate around Z)
+#                     curr_xy = curr_avg_normal[:2]
+#                     prev_xy = prev_avg_normal[:2]
 
-                    # Compute rotation angle around Z-axis to align current to previous
-                    # Using atan2 to get the angle between the two vectors in XY plane
-                    curr_angle = np.arctan2(curr_xy[1], curr_xy[0])
-                    prev_angle = np.arctan2(prev_xy[1], prev_xy[0])
-                    rotation_angle = prev_angle - curr_angle
+#                     # Compute rotation angle around Z-axis to align current to previous
+#                     # Using atan2 to get the angle between the two vectors in XY plane
+#                     curr_angle = np.arctan2(curr_xy[1], curr_xy[0])
+#                     prev_angle = np.arctan2(prev_xy[1], prev_xy[0])
+#                     rotation_angle = prev_angle - curr_angle
 
-                    # Create rotation matrix around Z-axis
-                    cos_theta = np.cos(rotation_angle)
-                    sin_theta = np.sin(rotation_angle)
-                    rot_z = np.array(
-                        [
-                            [cos_theta, -sin_theta, 0],
-                            [sin_theta, cos_theta, 0],
-                            [0, 0, 1],
-                        ],
-                        dtype=np.float64,
-                    )
+#                     # Create rotation matrix around Z-axis
+#                     cos_theta = np.cos(rotation_angle)
+#                     sin_theta = np.sin(rotation_angle)
+#                     rot_z = np.array(
+#                         [
+#                             [cos_theta, -sin_theta, 0],
+#                             [sin_theta, cos_theta, 0],
+#                             [0, 0, 1],
+#                         ],
+#                         dtype=np.float64,
+#                     )
 
-                    # Apply Z-rotation to the PCA rotation
-                    rotation_matrix = rot_z @ rotation_matrix
+#                     # Apply Z-rotation to the PCA rotation
+#                     rotation_matrix = rot_z @ rotation_matrix
 
-            # Apply rotation and translate to previous timepoint's center
-            aligned_points = centered @ rotation_matrix.T + ref_center
+#             # Apply rotation and translate to previous timepoint's center
+#             aligned_points = centered @ rotation_matrix.T + ref_center
 
-        # Transform dense points if they exist
-        # Use same center as sparse points for perfect alignment
-        aligned_dense_points = None
-        if tp.get("dense_points") is not None:
-            dense_points = tp["dense_points"]
-            dense_centered = dense_points - center  # Use sparse points center!
-            if i == 0:
-                aligned_dense_points = dense_points  # Keep at original position
-            else:
-                aligned_dense_points = dense_centered @ rotation_matrix.T + ref_center
+#         # Transform dense points if they exist
+#         # Use same center as sparse points for perfect alignment
+#         aligned_dense_points = None
+#         if tp.get("dense_points") is not None:
+#             dense_points = tp["dense_points"]
+#             dense_centered = dense_points - center  # Use sparse points center!
+#             if i == 0:
+#                 aligned_dense_points = dense_points  # Keep at original position
+#             else:
+#                 aligned_dense_points = dense_centered @ rotation_matrix.T + ref_center
 
-        # Transform leaf tip if it exists
-        aligned_leaf_tip = None
-        if tp.get("leaf_tip") is not None:
-            original_tip = tp["leaf_tip"]
-            # Apply same transformation as points: center, rotate, translate
-            centered_tip = original_tip - center
-            if i == 0:
-                aligned_leaf_tip = original_tip  # Keep at original position
-            else:
-                aligned_leaf_tip = centered_tip @ rotation_matrix.T + ref_center
+#         # Transform leaf tip if it exists
+#         aligned_leaf_tip = None
+#         if tp.get("leaf_tip") is not None:
+#             original_tip = tp["leaf_tip"]
+#             # Apply same transformation as points: center, rotate, translate
+#             centered_tip = original_tip - center
+#             if i == 0:
+#                 aligned_leaf_tip = original_tip  # Keep at original position
+#             else:
+#                 aligned_leaf_tip = centered_tip @ rotation_matrix.T + ref_center
 
-        # Transform normals if they exist (normals are direction vectors, don't translate)
-        aligned_normals = None
-        if tp.get("normals") is not None:
-            if i == 0:
-                aligned_normals = tp["normals"]  # First timepoint normals stay as is
-            else:
-                # Rotate normals (no translation for direction vectors)
-                aligned_normals = tp["normals"] @ rotation_matrix.T
+#         # Transform normals if they exist (normals are direction vectors, don't translate)
+#         aligned_normals = None
+#         if tp.get("normals") is not None:
+#             if i == 0:
+#                 aligned_normals = tp["normals"]  # First timepoint normals stay as is
+#             else:
+#                 # Rotate normals (no translation for direction vectors)
+#                 aligned_normals = tp["normals"] @ rotation_matrix.T
 
-        # Preserve original timepoint structure
-        aligned_tp = tp.copy()
-        aligned_tp["points"] = aligned_points
-        aligned_tp["dense_points"] = aligned_dense_points
-        aligned_tp["leaf_tip"] = aligned_leaf_tip
-        aligned_tp["normals"] = aligned_normals
-        aligned_timepoints.append(aligned_tp)
+#         # Preserve original timepoint structure
+#         aligned_tp = tp.copy()
+#         aligned_tp["points"] = aligned_points
+#         aligned_tp["dense_points"] = aligned_dense_points
+#         aligned_tp["leaf_tip"] = aligned_leaf_tip
+#         aligned_tp["normals"] = aligned_normals
+#         aligned_timepoints.append(aligned_tp)
 
-        # Store transformation in standard format
-        # Transform: p' = (p - center) @ rotation.T + ref_center
-        # Standard: p' = (p - center) @ rotation.T + center + translation
-        # Therefore: translation = ref_center - center
-        transformations.append(
-            {
-                "stage": "pca_align",
-                "day": tp["day"],
-                "rotation": rotation_matrix,
-                "translation": ref_center - center,
-                "center": center,
-                "basis": basis,
-                "original_center": center,
-                "reference_center": ref_center,
-                "is_reference": i == 0,
-            }
-        )
+#         # Store transformation in standard format
+#         # Transform: p' = (p - center) @ rotation.T + ref_center
+#         # Standard: p' = (p - center) @ rotation.T + center + translation
+#         # Therefore: translation = ref_center - center
+#         transformations.append(
+#             {
+#                 "stage": "pca_align",
+#                 "day": tp["day"],
+#                 "rotation": rotation_matrix,
+#                 "translation": ref_center - center,
+#                 "center": center,
+#                 "basis": basis,
+#                 "original_center": center,
+#                 "reference_center": ref_center,
+#                 "is_reference": i == 0,
+#             }
+#         )
 
-    return aligned_timepoints, transformations
+#     return aligned_timepoints, transformations
 
 
 def correct_pca_axis_with_stem(

@@ -1023,6 +1023,8 @@ class LeafSequencesDataset(Dataset):
                 # Stage 3: Sequential Z-axis rotation alignment
                 stage3_trans = self._align_z_rotation_sequential(aligned_timepoints)
                 all_transformations.append(("z_rotation_sequential", stage3_trans))
+                # stage3_trans = self._align_z_rotation_with_normals(aligned_timepoints)
+                # all_transformations.append(("z_rotation_normals", stage3_trans))
 
                 # Stage 4: Align base to origin
                 stage4_trans = self._align_base_to_origin(aligned_timepoints)
@@ -1113,69 +1115,69 @@ class LeafSequencesDataset(Dataset):
             timepoints, normal_matching_percentile_threshold
         )
 
-    def _align_sequence_pairwise_with_basis(
-        self, timepoints, initial_basis_trans, normal_matching_percentile_threshold=75
-    ):
-        """
-        Align sequence using pairwise PCA with pre-computed basis from Stage 1.
+    # def _align_sequence_pairwise_with_basis(
+    #     self, timepoints, initial_basis_trans, normal_matching_percentile_threshold=75
+    # ):
+    #     """
+    #     Align sequence using pairwise PCA with pre-computed basis from Stage 1.
 
-        Args:
-            timepoints: List of timepoint dictionaries
-            initial_basis_trans: List of transformations from Stage 1 with 'basis' field
-            normal_matching_percentile_threshold: Threshold for normal matching
+    #     Args:
+    #         timepoints: List of timepoint dictionaries
+    #         initial_basis_trans: List of transformations from Stage 1 with 'basis' field
+    #         normal_matching_percentile_threshold: Threshold for normal matching
 
-        Returns:
-            List of transformation dictionaries
-        """
-        # Extract basis matrices from Stage 1 transformations
-        initial_basis = [trans["basis"] for trans in initial_basis_trans]
+    #     Returns:
+    #         List of transformation dictionaries
+    #     """
+    #     # Extract basis matrices from Stage 1 transformations
+    #     initial_basis = [trans["basis"] for trans in initial_basis_trans]
 
-        # Call pairwise PCA alignment with pre-computed basis
-        # Note: align_sequence_pairwise_pca modifies timepoints in-place
-        _, transformations = alignment.align_sequence_pairwise_pca(
-            timepoints, normal_matching_percentile_threshold, initial_basis
-        )
+    #     # Call pairwise PCA alignment with pre-computed basis
+    #     # Note: align_sequence_pairwise_pca modifies timepoints in-place
+    #     _, transformations = alignment.align_sequence_pairwise_pca(
+    #         timepoints, normal_matching_percentile_threshold, initial_basis
+    #     )
 
-        return transformations
+    #     return transformations
 
-    def align_leaf_sequence(
-        self,
-        leaf_timeseries,
-        normal_matching_percentile_threshold=75,
-        plot_pairwise_alignment=False,
-    ):
-        """
-        Align leaf sequence using sequential PCA (wrapper for alignment.align_sequence_pairwise_pca).
+    # def align_leaf_sequence(
+    #     self,
+    #     leaf_timeseries,
+    #     normal_matching_percentile_threshold=75,
+    #     plot_pairwise_alignment=False,
+    # ):
+    #     """
+    #     Align leaf sequence using sequential PCA (wrapper for alignment.align_sequence_pairwise_pca).
 
-        Args:
-            leaf_timeseries: Leaf timeseries dict from dataset
-            normal_matching_percentile_threshold: Distance threshold for matching normals
-            plot_pairwise_alignment: If True, plot pairwise alignment (for debugging)
+    #     Args:
+    #         leaf_timeseries: Leaf timeseries dict from dataset
+    #         normal_matching_percentile_threshold: Distance threshold for matching normals
+    #         plot_pairwise_alignment: If True, plot pairwise alignment (for debugging)
 
-        Returns:
-            aligned_timepoints: List of aligned timepoint dicts
-            transformations: List of transformation dicts
-        """
-        timepoints = leaf_timeseries["timepoints"]
+    #     Returns:
+    #         aligned_timepoints: List of aligned timepoint dicts
+    #         transformations: List of transformation dicts
+    #     """
+    #     timepoints = leaf_timeseries["timepoints"]
 
-        # Use alignment module function
-        aligned_timepoints, transformations = alignment.align_sequence_pairwise_pca(
-            timepoints, normal_matching_percentile_threshold
-        )
+    #     # Use alignment module function
+    #     aligned_timepoints, transformations = alignment.align_sequence_pairwise_pca(
+    #         timepoints, normal_matching_percentile_threshold
+    #     )
 
-        # Plot pairwise alignment (for sequential alignment, plot each pair i-1 -> i)
-        if plot_pairwise_alignment:
-            # Lazy import for visualization to avoid heavy dependencies
-            from plant_shape_analysis.vis.plot_functions import (
-                plot_pairwise_alignment_with_quivers,
-            )
+    #     # Plot pairwise alignment (for sequential alignment, plot each pair i-1 -> i)
+    #     if plot_pairwise_alignment:
+    #         # Lazy import for visualization to avoid heavy dependencies
+    #         from plant_shape_analysis.vis.plot_functions import (
+    #             plot_pairwise_alignment_with_quivers,
+    #         )
 
-            for i in range(1, len(aligned_timepoints)):
-                plot_pairwise_alignment_with_quivers(
-                    aligned_timepoints, transformations, idx1=i - 1, idx2=i
-                )
+    #         for i in range(1, len(aligned_timepoints)):
+    #             plot_pairwise_alignment_with_quivers(
+    #                 aligned_timepoints, transformations, idx1=i - 1, idx2=i
+    #             )
 
-        return aligned_timepoints, transformations
+    #     return aligned_timepoints, transformations
 
     @staticmethod
     def compose_transformations(transformation_stages):
