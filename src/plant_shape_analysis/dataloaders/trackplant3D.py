@@ -1104,10 +1104,6 @@ class LeafSequencesDataset(Dataset):
         """Align base to origin (wrapper for alignment.align_base_to_origin)"""
         return alignment.align_base_to_origin(timepoints, base_percentile)
 
-    def _align_leaves_to_xy_plane(self, timepoints):
-        """Align to XY plane (wrapper for alignment.align_to_xy_plane) - Deprecated"""
-        return alignment.align_to_xy_plane(timepoints)
-
     def _align_z_rotation_with_normals(
         self, timepoints, normal_matching_percentile_threshold=75
     ):
