@@ -1021,10 +1021,10 @@ class LeafSequencesDataset(Dataset):
                 all_transformations.append(("align_to_z", stage2_trans))
 
                 # Stage 3: Sequential Z-axis rotation alignment
-                stage3_trans = self._align_z_rotation_sequential(aligned_timepoints)
-                all_transformations.append(("z_rotation_sequential", stage3_trans))
-                # stage3_trans = self._align_z_rotation_with_normals(aligned_timepoints)
-                # all_transformations.append(("z_rotation_normals", stage3_trans))
+                # stage3_trans = self._align_z_rotation_sequential(aligned_timepoints)
+                # all_transformations.append(("z_rotation_sequential", stage3_trans))
+                stage3_trans = self._align_z_rotation_with_normals(aligned_timepoints)
+                all_transformations.append(("z_rotation_normals", stage3_trans))
 
                 # Stage 4: Align base to origin
                 stage4_trans = self._align_base_to_origin(aligned_timepoints)
