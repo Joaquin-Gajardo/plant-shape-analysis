@@ -8,6 +8,8 @@ from plant_shape_analysis.alignment.pca_alignment import (
     align_main_axis_to_z,
     align_sequence_pairwise_pca,
     align_to_xy_plane,
+    align_z_rotation_with_normals,
+    ensure_leaf_tip_up,
     pca_align_pair,
     prealign_with_leaf_tips,
 )
@@ -25,5 +27,7 @@ __all__ = [
     "align_sequence_pairwise_pca",
     "prealign_with_leaf_tips",
     "align_main_axis_to_z",
+    "ensure_leaf_tip_up",
+    "align_z_rotation_with_normals",
     "align_to_xy_plane",
 ]

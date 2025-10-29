@@ -951,19 +951,15 @@ class LeafSequencesDataset(Dataset):
         """
         Apply PCA-based alignment to all leaf sequences in the dataset.
 
-        New streamlined approach (uses plant vertical alignment):
-        0. Enforce downward-facing normals (on unaligned data)
-           - Uses plant's vertical alignment (Z-axis up)
-           - Ensures all leaf normals point downward (outer/abaxial face)
-           - Fixes both temporal consistency and face orientation at the root
-        1. Apply PCA alignment with normal-aware Z-rotation
-           - Sequential alignment: each timepoint aligned to previous one
-           - Z-axis rotation: computes optimal angle based on normal directions
-        2. Align main PCA axis to Z-axis
-           - Rotates each leaf so its main axis is parallel to Z-axis
-           - Makes all leaves have the same inclination for easy comparison
-        3. Vertical alignment to z=0 plane
-           - Shifts each timepoint independently so its lowest point is at z=0
+        New pipeline (uses normals inherited from plant alignment):
+        1. Align main PCA axis to Z-axis
+           - Gets leaf standing vertically
+        2. Ensure leaf tip faces up
+           - Fixes 180° flips by checking if tip is above centroid
+        3. Rotate around Z-axis using normals
+           - Uses consistent normals from plant alignment to fix rotational orientation
+        4. Translate to z=0 plane
+           - Final vertical positioning
         """
 
         aligned_timeseries = []
@@ -973,28 +969,24 @@ class LeafSequencesDataset(Dataset):
             if len(leaf_ts["timepoints"]) >= 2:
                 all_transformations = []
 
-                # Stage 0: Enforce downward-facing normals (Z < 0)
-                # This uses the fact that plants are vertically aligned (Z-axis up)
-                # and ensures temporal consistency + correct face orientation
-                # if leaf_ts["timepoints"][0].get("normals") is not None:
-                #     stage0_trans = self._enforce_downward_facing_normals(leaf_ts["timepoints"])
-                #     all_transformations.append(("enforce_downward_normals", stage0_trans))
-                # else:
-                #     all_transformations.append(("enforce_downward_normals", None))
+                # Start with leaf timepoints (normals inherited from plant dataset)
+                aligned_timepoints = [tp.copy() for tp in leaf_ts["timepoints"]]
 
-                # Stage 1: Apply PCA alignment with normal-aware Z-rotation
-                # Now the alignment can use the corrected normals to determine proper orientation
-                aligned_timepoints, stage1_trans = self.align_leaf_sequence(leaf_ts)
-                all_transformations.append(("pca_align", stage1_trans))
+                # Stage 1: Align main PCA axis to Z-axis (make leaves vertical)
+                stage1_trans = self._align_pca_to_z_axis(aligned_timepoints)
+                all_transformations.append(("align_to_z", stage1_trans))
 
-                # Stage 2: Align main PCA axis to Z-axis (make all leaves parallel)
-                # This aligns the leaf's main direction with the vertical axis
-                stage2_trans = self._align_pca_to_z_axis(aligned_timepoints)
-                all_transformations.append(("align_to_z", stage2_trans))
+                # Stage 2: Ensure leaf tips face upward (fix 180° flips)
+                stage2_trans = self._ensure_leaf_tip_up(aligned_timepoints)
+                all_transformations.append(("tip_up", stage2_trans))
 
-                # Stage 3: Vertical alignment - shift each timepoint so its lowest point is at z=0
-                stage3_trans = self._align_leaves_to_xy_plane(aligned_timepoints)
-                all_transformations.append(("vertical_align", stage3_trans))
+                # Stage 3: Rotate around Z-axis using normal consistency
+                stage3_trans = self._align_z_rotation_with_normals(aligned_timepoints)
+                all_transformations.append(("z_rotation_normals", stage3_trans))
+
+                # Stage 4: Translate to z=0 plane
+                stage4_trans = self._align_leaves_to_xy_plane(aligned_timepoints)
+                all_transformations.append(("vertical_align", stage4_trans))
 
                 # Update the leaf timeseries with aligned data
                 aligned_leaf_ts = leaf_ts.copy()
@@ -1058,6 +1050,16 @@ class LeafSequencesDataset(Dataset):
     def _align_leaves_to_xy_plane(self, timepoints):
         """Align to XY plane (wrapper for alignment.align_to_xy_plane)"""
         return alignment.align_to_xy_plane(timepoints)
+
+    def _ensure_leaf_tip_up(self, timepoints):
+        """Ensure leaf tips face up (wrapper for alignment.ensure_leaf_tip_up)"""
+        return alignment.ensure_leaf_tip_up(timepoints)
+
+    def _align_z_rotation_with_normals(self, timepoints, normal_matching_percentile_threshold=75):
+        """Align Z rotation with normals (wrapper for alignment.align_z_rotation_with_normals)"""
+        return alignment.align_z_rotation_with_normals(
+            timepoints, normal_matching_percentile_threshold
+        )
 
     def align_leaf_sequence(
         self,

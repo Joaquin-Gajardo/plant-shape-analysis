@@ -513,6 +513,253 @@ def align_main_axis_to_z(
     return transformations
 
 
+def ensure_leaf_tip_up(timepoints: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Ensure leaf tips point upward (positive Z direction) after Z-axis alignment.
+
+    This assumes:
+    - Main PCA axis is already aligned to Z-axis
+    - Leaf tip information is available in timepoints
+
+    If the leaf tip is below the centroid (pointing down), flip the leaf 180° around X-axis.
+
+    Args:
+        timepoints: List of timepoint dictionaries (modified in-place)
+
+    Returns:
+        List of transformation dictionaries for each timepoint
+    """
+    transformations = []
+
+    for tp in timepoints:
+        if tp["points"] is None or len(tp["points"]) == 0:
+            transformations.append(
+                {
+                    "stage": "tip_up",
+                    "day": tp["day"],
+                    "rotation": np.eye(3),
+                    "translation": np.zeros(3),
+                    "flipped": False,
+                }
+            )
+            continue
+
+        # Check if leaf tip exists
+        if tp.get("leaf_tip") is None:
+            transformations.append(
+                {
+                    "stage": "tip_up",
+                    "day": tp["day"],
+                    "rotation": np.eye(3),
+                    "translation": np.zeros(3),
+                    "flipped": False,
+                }
+            )
+            continue
+
+        points = tp["points"]
+        center = np.mean(points, axis=0)
+        leaf_tip = tp["leaf_tip"]
+
+        # Check if tip is above centroid (Z-component)
+        tip_relative_z = leaf_tip[2] - center[2]
+
+        if tip_relative_z < 0:
+            # Tip is below centroid, flip 180° around X-axis
+            # This preserves Z-up but flips the leaf
+            rot_matrix = np.array(
+                [[1, 0, 0], [0, -1, 0], [0, 0, -1]], dtype=np.float64
+            )
+
+            # Apply rotation around centroid
+            centered = points - center
+            tp["points"] = centered @ rot_matrix.T + center
+
+            # Rotate normals if they exist
+            if tp.get("normals") is not None:
+                tp["normals"] = tp["normals"] @ rot_matrix.T
+
+            # Rotate dense points if they exist
+            if tp.get("dense_points") is not None:
+                centered_dense = tp["dense_points"] - center
+                tp["dense_points"] = centered_dense @ rot_matrix.T + center
+
+            # Rotate leaf tip
+            centered_tip = leaf_tip - center
+            tp["leaf_tip"] = centered_tip @ rot_matrix.T + center
+
+            flipped = True
+        else:
+            rot_matrix = np.eye(3)
+            flipped = False
+
+        transformations.append(
+            {
+                "stage": "tip_up",
+                "day": tp["day"],
+                "rotation": rot_matrix,
+                "translation": np.zeros(3),
+                "flipped": flipped,
+                "tip_relative_z_before": tip_relative_z,
+            }
+        )
+
+    return transformations
+
+
+def align_z_rotation_with_normals(
+    timepoints: List[Dict[str, Any]], normal_matching_percentile_threshold: int = 75
+) -> List[Dict[str, Any]]:
+    """
+    Rotate around Z-axis to align normal directions across timepoints.
+
+    This assumes:
+    - Main PCA axis is already aligned to Z-axis
+    - Normals are available and consistent across time (from plant alignment)
+
+    Uses sequential alignment: each timepoint is aligned to the previous one
+    by computing the optimal rotation angle around Z-axis based on average normal direction.
+
+    Args:
+        timepoints: List of timepoint dictionaries (modified in-place)
+        normal_matching_percentile_threshold: Distance threshold percentile for matching normals
+
+    Returns:
+        List of transformation dictionaries for each timepoint
+    """
+    from scipy.spatial import cKDTree
+
+    if len(timepoints) < 2:
+        return [
+            {
+                "stage": "z_rotation_normals",
+                "day": timepoints[0]["day"],
+                "rotation": np.eye(3),
+                "translation": np.zeros(3),
+                "rotation_angle_deg": 0.0,
+            }
+        ]
+
+    transformations = []
+
+    # First timepoint is reference
+    transformations.append(
+        {
+            "stage": "z_rotation_normals",
+            "day": timepoints[0]["day"],
+            "rotation": np.eye(3),
+            "translation": np.zeros(3),
+            "rotation_angle_deg": 0.0,
+        }
+    )
+
+    # Sequential alignment: align each timepoint to previous one
+    for i in range(1, len(timepoints)):
+        prev_tp = timepoints[i - 1]
+        curr_tp = timepoints[i]
+
+        # Check if both have normals
+        if (
+            curr_tp.get("normals") is None
+            or prev_tp.get("normals") is None
+            or len(curr_tp["normals"]) == 0
+            or len(prev_tp["normals"]) == 0
+        ):
+            transformations.append(
+                {
+                    "stage": "z_rotation_normals",
+                    "day": curr_tp["day"],
+                    "rotation": np.eye(3),
+                    "translation": np.zeros(3),
+                    "rotation_angle_deg": 0.0,
+                }
+            )
+            continue
+
+        curr_points = curr_tp["points"]
+        curr_normals = curr_tp["normals"]
+        prev_points = prev_tp["points"]
+        prev_normals = prev_tp["normals"]
+
+        # Find nearest neighbors to match normals
+        prev_tree = cKDTree(prev_points)
+        distances, indices = prev_tree.query(curr_points, k=1)
+
+        # Use reliable matches for computing average direction
+        max_distance = np.percentile(distances, normal_matching_percentile_threshold)
+        reliable_matches = distances < max_distance
+
+        if not np.any(reliable_matches):
+            transformations.append(
+                {
+                    "stage": "z_rotation_normals",
+                    "day": curr_tp["day"],
+                    "rotation": np.eye(3),
+                    "translation": np.zeros(3),
+                    "rotation_angle_deg": 0.0,
+                }
+            )
+            continue
+
+        # Compute average normal direction for current timepoint
+        curr_avg_normal = np.mean(curr_normals[reliable_matches], axis=0)
+        curr_avg_normal = curr_avg_normal / (np.linalg.norm(curr_avg_normal) + 1e-8)
+
+        # Compute average normal direction for previous timepoint
+        matched_prev_normals = prev_normals[indices[reliable_matches]]
+        prev_avg_normal = np.mean(matched_prev_normals, axis=0)
+        prev_avg_normal = prev_avg_normal / (np.linalg.norm(prev_avg_normal) + 1e-8)
+
+        # Project normals onto XY plane (since we only rotate around Z)
+        curr_xy = curr_avg_normal[:2]
+        prev_xy = prev_avg_normal[:2]
+
+        # Compute rotation angle around Z-axis to align current to previous
+        curr_angle = np.arctan2(curr_xy[1], curr_xy[0])
+        prev_angle = np.arctan2(prev_xy[1], prev_xy[0])
+        rotation_angle = prev_angle - curr_angle
+
+        # Create rotation matrix around Z-axis
+        cos_theta = np.cos(rotation_angle)
+        sin_theta = np.sin(rotation_angle)
+        rot_z = np.array(
+            [[cos_theta, -sin_theta, 0], [sin_theta, cos_theta, 0], [0, 0, 1]],
+            dtype=np.float64,
+        )
+
+        # Apply rotation around centroid
+        center = np.mean(curr_points, axis=0)
+        centered = curr_points - center
+        curr_tp["points"] = centered @ rot_z.T + center
+
+        # Rotate normals
+        if curr_tp.get("normals") is not None:
+            curr_tp["normals"] = curr_tp["normals"] @ rot_z.T
+
+        # Rotate dense points if they exist
+        if curr_tp.get("dense_points") is not None:
+            centered_dense = curr_tp["dense_points"] - center
+            curr_tp["dense_points"] = centered_dense @ rot_z.T + center
+
+        # Rotate leaf tip if it exists
+        if curr_tp.get("leaf_tip") is not None:
+            centered_tip = curr_tp["leaf_tip"] - center
+            curr_tp["leaf_tip"] = centered_tip @ rot_z.T + center
+
+        transformations.append(
+            {
+                "stage": "z_rotation_normals",
+                "day": curr_tp["day"],
+                "rotation": rot_z,
+                "translation": np.zeros(3),
+                "rotation_angle_deg": np.degrees(rotation_angle),
+                "center": center,
+            }
+        )
+
+    return transformations
+
+
 def align_to_xy_plane(timepoints: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Align each timepoint independently so its lowest point is at z=0.
