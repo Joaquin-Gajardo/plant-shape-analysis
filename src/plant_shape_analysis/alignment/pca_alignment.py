@@ -550,6 +550,139 @@ def align_main_axis_to_z(
     return transformations
 
 
+def align_with_normal_frame(
+    timepoints: List[Dict[str, Any]],
+    basis_from_stage1: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Construct coordinate frames using PCA main axis and normals.
+
+    Creates a consistent right-handed coordinate system where:
+    - 1st axis: Main PCA axis (base→tip direction from Stage 1)
+    - 3rd axis: Average normal direction (leaf surface normal)
+    - 2nd axis: Cross product of 1st and 3rd axes
+
+    This ensures all leaves have the same orientation convention based on
+    their intrinsic geometry (growth direction + surface normal).
+
+    Args:
+        timepoints: List of timepoint dictionaries (modified in-place)
+        basis_from_stage1: Optional list of transformations from Stage 1 with 'basis' field
+
+    Returns:
+        List of transformation dictionaries for each timepoint
+    """
+    transformations = []
+
+    for idx, tp in enumerate(timepoints):
+        if tp["points"] is None or len(tp["points"]) < 3:
+            transformations.append(
+                {
+                    "stage": "normal_frame",
+                    "day": tp["day"],
+                    "rotation": np.eye(3),
+                    "translation": np.zeros(3),
+                    "center": np.zeros(3),
+                }
+            )
+            continue
+
+        points = tp["points"]
+        center = np.mean(points, axis=0)
+
+        # Get PCA basis from Stage 1 (already corrected main axis to point base→tip)
+        if basis_from_stage1 is not None and idx < len(basis_from_stage1):
+            pca_basis = basis_from_stage1[idx]["basis"]  # All three principal components
+            main_axis = pca_basis[0]
+            pca_axis2 = pca_basis[1]
+            pca_axis3 = pca_basis[2]
+        else:
+            # Fallback: compute PCA
+            centered = points - center
+            pca_basis = compute_pca_basis(centered)
+            main_axis = pca_basis[0]
+            pca_axis2 = pca_basis[1]
+            pca_axis3 = pca_basis[2]
+
+        main_axis = main_axis / np.linalg.norm(main_axis)
+        pca_axis2 = pca_axis2 / np.linalg.norm(pca_axis2)
+        pca_axis3 = pca_axis3 / np.linalg.norm(pca_axis3)
+
+        # Get average normal direction
+        if tp.get("normals") is not None and len(tp["normals"]) > 0:
+            normals = tp["normals"]
+            avg_normal = np.mean(normals, axis=0)
+            avg_normal = avg_normal / np.linalg.norm(avg_normal)
+
+            # Correct sign of 3rd PCA axis to align with normal direction
+            # The 3rd PCA axis should point in a direction consistent with normals
+            # Make avg_normal perpendicular to main_axis first (Gram-Schmidt)
+            normal_perp = avg_normal - np.dot(avg_normal, main_axis) * main_axis
+            normal_perp_norm = np.linalg.norm(normal_perp)
+
+            if normal_perp_norm > 1e-6:
+                normal_perp = normal_perp / normal_perp_norm
+
+                # Check alignment of pca_axis3 with the perpendicular component of avg_normal
+                # If they point in opposite directions, flip pca_axis3
+                dot_product = np.dot(pca_axis3, normal_perp)
+                if dot_product < 0:
+                    pca_axis3 = -pca_axis3
+                    # Also flip axis2 to maintain right-handed system
+                    pca_axis2 = -pca_axis2
+
+        # Construct orthogonal frame using corrected PCA axes
+        axis1 = main_axis
+        axis2 = pca_axis2
+        axis3 = pca_axis3
+
+        # Create target basis (where we want these axes to point)
+        # Map: axis1 → Z, axis2 → X, axis3 → Y
+        target_frame = np.array([
+            [0, 0, 1],  # axis1 → Z (vertical, main growth)
+            [1, 0, 0],  # axis2 → X
+            [0, 1, 0],  # axis3 → Y (normal direction)
+        ])
+
+        # Current frame (rows are the axes)
+        current_frame = np.array([axis1, axis2, axis3])
+
+        # Rotation matrix to align current_frame to target_frame
+        # target = current @ R.T  =>  R.T = current^-1 @ target  =>  R = target.T @ current
+        rotation_matrix = target_frame.T @ current_frame
+
+        # Apply rotation around centroid
+        centered = points - center
+        tp["points"] = centered @ rotation_matrix.T + center
+
+        # Rotate normals
+        if tp.get("normals") is not None:
+            tp["normals"] = tp["normals"] @ rotation_matrix.T
+
+        # Rotate dense points
+        if tp.get("dense_points") is not None:
+            centered_dense = tp["dense_points"] - center
+            tp["dense_points"] = centered_dense @ rotation_matrix.T + center
+
+        # Rotate leaf tip
+        if tp.get("leaf_tip") is not None:
+            centered_tip = tp["leaf_tip"] - center
+            tp["leaf_tip"] = centered_tip @ rotation_matrix.T + center
+
+        transformations.append(
+            {
+                "stage": "normal_frame",
+                "day": tp["day"],
+                "rotation": rotation_matrix,
+                "translation": np.zeros(3),
+                "center": center,
+                "constructed_frame": current_frame,
+            }
+        )
+
+    return transformations
+
+
 def align_z_rotation_sequential(
     timepoints: List[Dict[str, Any]],
     normal_matching_percentile_threshold: int = 75,
