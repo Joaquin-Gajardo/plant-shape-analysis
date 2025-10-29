@@ -802,14 +802,19 @@ def align_z_rotation_with_normals(
     return transformations
 
 
-def align_to_xy_plane(timepoints: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def align_base_to_origin(
+    timepoints: List[Dict[str, Any]], base_percentile: float = 1.0
+) -> List[Dict[str, Any]]:
     """
-    Align each timepoint independently so its lowest point is at z=0.
-    This ensures objects are positioned at a consistent height for visualization
-    while preserving vertical growth differences between timepoints.
+    Align each timepoint by bringing the base (insertion point) to the origin.
+
+    Uses the lowest percentile of points along the main axis to robustly estimate
+    the base location, similar to stem-based alignment. This is more robust than
+    using just the single lowest point.
 
     Args:
         timepoints: List of aligned timepoint dictionaries (modified in-place)
+        base_percentile: Percentile of lowest points to use for base estimation (default: 1.0)
 
     Returns:
         List of transformation dictionaries for each timepoint
@@ -818,40 +823,56 @@ def align_to_xy_plane(timepoints: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
     for tp in timepoints:
         if tp["points"] is not None and len(tp["points"]) > 0:
-            # Find minimum z-coordinate for this timepoint
-            min_z = np.min(tp["points"][:, 2])
-            vertical_shift = np.array([0, 0, -min_z])
+            points = tp["points"]
+
+            # Use lowest percentile of points along Z-axis to define base
+            z_coords = points[:, 2]
+            z_threshold = np.percentile(z_coords, base_percentile)
+            base_mask = z_coords <= z_threshold
+
+            if np.sum(base_mask) < 1:
+                # Fallback: use lowest point
+                min_z = np.min(z_coords)
+                shift = np.array([0, 0, -min_z])
+            else:
+                # Compute centroid of base points
+                base_points = points[base_mask]
+                base_centroid = np.mean(base_points, axis=0)
+                # Shift to bring base centroid to origin
+                shift = -base_centroid
 
             # Shift points
-            tp["points"] = tp["points"] + vertical_shift
+            tp["points"] = tp["points"] + shift
 
             # Shift dense points
             if tp.get("dense_points") is not None:
-                tp["dense_points"] = tp["dense_points"] + vertical_shift
+                tp["dense_points"] = tp["dense_points"] + shift
 
             # Shift leaf tip
             if tp.get("leaf_tip") is not None:
-                tp["leaf_tip"] = tp["leaf_tip"] + vertical_shift
+                tp["leaf_tip"] = tp["leaf_tip"] + shift
 
             # Normals are direction vectors - no translation needed
 
             transformations.append(
                 {
-                    "stage": "vertical_align",
+                    "stage": "align_base",
                     "day": tp["day"],
                     "rotation": np.eye(3),
-                    "translation": vertical_shift,
+                    "translation": shift,
                     "center": np.zeros(3),
+                    "base_percentile": base_percentile,
                 }
             )
         else:
             transformations.append(
                 {
-                    "stage": "vertical_align",
+                    "stage": "align_base",
                     "day": tp["day"],
                     "rotation": np.eye(3),
                     "translation": np.zeros(3),
                     "center": np.zeros(3),
+                    "base_percentile": base_percentile,
                 }
             )
 

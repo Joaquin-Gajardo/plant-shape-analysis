@@ -994,10 +994,12 @@ class LeafSequencesDataset(Dataset):
            - Fixes sign ambiguity even without leaf tips
         2. Align main PCA axis to Z-axis
            - Gets leaf standing vertically using corrected PCA basis
+           - No additional flipping needed (orientation correct from Stage 1)
         3. Rotate around Z-axis using normals
            - Uses consistent normals from plant alignment to fix rotational orientation
-        4. Translate to z=0 plane
-           - Final vertical positioning
+        4. Align base to origin
+           - Uses lowest 1% of points to robustly estimate base location
+           - Brings base centroid to origin (0,0,0)
         """
 
         aligned_timeseries = []
@@ -1029,9 +1031,9 @@ class LeafSequencesDataset(Dataset):
                 stage3_trans = self._align_z_rotation_with_normals(aligned_timepoints)
                 all_transformations.append(("z_rotation_normals", stage3_trans))
 
-                # Stage 4: Translate to z=0 plane
-                stage4_trans = self._align_leaves_to_xy_plane(aligned_timepoints)
-                all_transformations.append(("vertical_align", stage4_trans))
+                # Stage 4: Align base to origin
+                stage4_trans = self._align_base_to_origin(aligned_timepoints)
+                all_transformations.append(("align_base", stage4_trans))
 
                 # Update the leaf timeseries with aligned data
                 aligned_leaf_ts = leaf_ts.copy()
@@ -1098,8 +1100,12 @@ class LeafSequencesDataset(Dataset):
             timepoints, basis_from_pca=basis_from_pca, seq_name=seq_name
         )
 
+    def _align_base_to_origin(self, timepoints, base_percentile=1.0):
+        """Align base to origin (wrapper for alignment.align_base_to_origin)"""
+        return alignment.align_base_to_origin(timepoints, base_percentile)
+
     def _align_leaves_to_xy_plane(self, timepoints):
-        """Align to XY plane (wrapper for alignment.align_to_xy_plane)"""
+        """Align to XY plane (wrapper for alignment.align_to_xy_plane) - Deprecated"""
         return alignment.align_to_xy_plane(timepoints)
 
     def _align_z_rotation_with_normals(
