@@ -987,9 +987,10 @@ class LeafSequencesDataset(Dataset):
         2. Align main PCA axis to Z-axis
            - Gets leaf standing vertically using corrected PCA basis
            - No additional flipping needed (orientation correct from Stage 1)
-        3. Sequential pairwise alignment with normals
-           - Aligns each timepoint to previous using corrected PCA basis
-           - Includes normal-aware Z-rotation for consistent face orientation
+        3. Z-axis rotation using normals
+           - Sequentially aligns each timepoint to previous using normals
+           - Computes optimal rotation angle around Z-axis only
+           - Preserves vertical alignment while fixing rotational orientation
         4. Align base to origin
            - Uses lowest 1% of points to robustly estimate base location
            - Brings base centroid to origin (0,0,0)
