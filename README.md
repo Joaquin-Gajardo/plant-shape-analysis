@@ -12,9 +12,6 @@ cd plant-shape-analysis
 pip install -e .
 
 # Or directly from GitHub:
-pip install git+https://github.com/Joaquin-Gajardo/plant-shape-analysis.git
-
-# To update to the latest version:
 pip uninstall plant-shape-analysis -y && pip install git+https://github.com/Joaquin-Gajardo/plant-shape-analysis.git
 ```
 This installs only core dependencies: numpy, torch, open3d, if not already installed in the environment.
@@ -98,7 +95,7 @@ leaf_dataset = LeafSequencesDataset(
     apply_alignment=True,
 )
 
-# Get all leaves from a specific plant sequence
+# Get a specific leaf timeseries by its unique sequence name
 leaf_seq = leaf_dataset.get_timeseries_by_sequence_name('maize_control_plant1_leaf1')
 print(leaf_seq)
 
@@ -108,7 +105,7 @@ visualize_leaf_sequence(leaf_seq, window_name=f"{leaf_seq['sequence_name']}", sp
 # Other utilites
 print(leaf_dataset.get_sequence_names()) # list all leaf sequence names
 
-# Get a specific leaf timeseries by its unique sequence name
+# Get all leaves from a specific plant sequence
 all_leaves = leaf_dataset.get_timeseries_by_plant_sequence('maize_control_plant1')
 print(len(all_leaves))  # number of leaves in that plant
 
