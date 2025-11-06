@@ -857,12 +857,14 @@ def align_z_rotation_with_normals(
     from scipy.spatial import cKDTree
 
     if len(timepoints) < 2:
+        center0 = np.mean(timepoints[0]["points"], axis=0) if timepoints[0]["points"] is not None else np.zeros(3)
         return [
             {
                 "stage": "z_rotation_normals",
                 "day": timepoints[0]["day"],
                 "rotation": np.eye(3),
                 "translation": np.zeros(3),
+                "center": center0,
                 "rotation_angle_deg": 0.0,
             }
         ]
@@ -870,12 +872,14 @@ def align_z_rotation_with_normals(
     transformations = []
 
     # First timepoint is reference
+    center0 = np.mean(timepoints[0]["points"], axis=0)
     transformations.append(
         {
             "stage": "z_rotation_normals",
             "day": timepoints[0]["day"],
             "rotation": np.eye(3),
             "translation": np.zeros(3),
+            "center": center0,
             "rotation_angle_deg": 0.0,
         }
     )
@@ -892,12 +896,14 @@ def align_z_rotation_with_normals(
             or len(curr_tp["normals"]) == 0
             or len(prev_tp["normals"]) == 0
         ):
+            center = np.mean(curr_tp["points"], axis=0)
             transformations.append(
                 {
                     "stage": "z_rotation_normals",
                     "day": curr_tp["day"],
                     "rotation": np.eye(3),
                     "translation": np.zeros(3),
+                    "center": center,
                     "rotation_angle_deg": 0.0,
                 }
             )
@@ -917,12 +923,14 @@ def align_z_rotation_with_normals(
         reliable_matches = distances < max_distance
 
         if not np.any(reliable_matches):
+            center = np.mean(curr_points, axis=0)
             transformations.append(
                 {
                     "stage": "z_rotation_normals",
                     "day": curr_tp["day"],
                     "rotation": np.eye(3),
                     "translation": np.zeros(3),
+                    "center": center,
                     "rotation_angle_deg": 0.0,
                 }
             )
