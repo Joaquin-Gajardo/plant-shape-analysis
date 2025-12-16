@@ -19,6 +19,63 @@ COLOR_MAP = {  # Color mapping for semantic labels to match roughly the TrackPla
     9: np.array([1.0, 0.75, 0.8]),  # Pink
 }
 
+# Publication-quality color palettes
+PUBLICATION_COLORS = {
+    # Viridis-inspired palette (perceptually uniform, colorblind-friendly)
+    "viridis": [
+        np.array([0.267, 0.005, 0.329]),  # Dark purple
+        np.array([0.283, 0.141, 0.458]),  # Purple
+        np.array([0.254, 0.265, 0.530]),  # Blue-purple
+        np.array([0.207, 0.372, 0.553]),  # Blue
+        np.array([0.164, 0.471, 0.558]),  # Teal-blue
+        np.array([0.134, 0.569, 0.551]),  # Teal
+        np.array([0.134, 0.658, 0.518]),  # Green-teal
+        np.array([0.267, 0.750, 0.441]),  # Green
+        np.array([0.478, 0.821, 0.318]),  # Light green
+        np.array([0.741, 0.873, 0.150]),  # Yellow-green
+        np.array([0.993, 0.906, 0.144]),  # Yellow
+    ],
+    # Nature-inspired botanical palette
+    "botanical": [
+        np.array([0.404, 0.282, 0.196]),  # Soil brown
+        np.array([0.282, 0.486, 0.275]),  # Deep green
+        np.array([0.388, 0.620, 0.380]),  # Medium green
+        np.array([0.502, 0.722, 0.463]),  # Light green
+        np.array([0.627, 0.796, 0.553]),  # Pale green
+        np.array([0.788, 0.875, 0.706]),  # Very pale green
+        np.array([0.918, 0.722, 0.467]),  # Peach
+        np.array([0.839, 0.518, 0.376]),  # Salmon
+        np.array([0.718, 0.365, 0.282]),  # Terra cotta
+        np.array([0.584, 0.251, 0.204]),  # Rust
+    ],
+    # Cool scientific palette
+    "scientific": [
+        np.array([0.122, 0.467, 0.706]),  # Blue
+        np.array([0.682, 0.780, 0.910]),  # Light blue
+        np.array([0.200, 0.627, 0.173]),  # Green
+        np.array([0.651, 0.808, 0.890]),  # Pale cyan
+        np.array([0.984, 0.604, 0.600]),  # Salmon
+        np.array([0.992, 0.749, 0.435]),  # Orange
+        np.array([0.792, 0.698, 0.839]),  # Lavender
+        np.array([0.416, 0.239, 0.604]),  # Purple
+        np.array([1.000, 0.996, 0.639]),  # Pale yellow
+        np.array([0.694, 0.349, 0.157]),  # Brown
+    ],
+    # Warm earth tones
+    "earthy": [
+        np.array([0.545, 0.271, 0.075]),  # Saddle brown
+        np.array([0.627, 0.322, 0.176]),  # Sienna
+        np.array([0.804, 0.522, 0.247]),  # Peru
+        np.array([0.824, 0.706, 0.549]),  # Tan
+        np.array([0.420, 0.557, 0.137]),  # Olive green
+        np.array([0.502, 0.502, 0.000]),  # Olive
+        np.array([0.333, 0.420, 0.184]),  # Dark olive green
+        np.array([0.855, 0.647, 0.125]),  # Goldenrod
+        np.array([0.722, 0.525, 0.043]),  # Dark goldenrod
+        np.array([0.545, 0.000, 0.000]),  # Dark red
+    ],
+}
+
 
 def visualize_pymeshlab_mesh(ms, window_name: str = "Mesh Visualization"):
     """
@@ -378,12 +435,16 @@ def visualize_leaf_sequence(
                 basis = timepoint["basis"]
             else:
                 # Fallback: Get transformation stages from leaf_timeseries
-                transformation_stages = leaf_timeseries.get("transformation_stages", None)
+                transformation_stages = leaf_timeseries.get(
+                    "transformation_stages", None
+                )
 
                 if transformation_stages is not None and len(transformation_stages) > 0:
                     # Find first stage that has "basis" field and get initial basis
                     basis_stage_idx = None
-                    for stage_idx, (stage_name, stage_trans) in enumerate(transformation_stages):
+                    for stage_idx, (stage_name, stage_trans) in enumerate(
+                        transformation_stages
+                    ):
                         if stage_trans is not None and i < len(stage_trans):
                             trans_info = stage_trans[i]
                             if trans_info.get("basis") is not None:
@@ -396,7 +457,9 @@ def visualize_leaf_sequence(
                     if basis is not None and basis_stage_idx is not None:
                         basis_transformed = basis.copy()
 
-                        for stage_idx, (stage_name, stage_trans) in enumerate(transformation_stages):
+                        for stage_idx, (stage_name, stage_trans) in enumerate(
+                            transformation_stages
+                        ):
                             # Skip stages up to and including the one where we got the basis
                             if stage_idx <= basis_stage_idx:
                                 continue
