@@ -95,7 +95,8 @@ def main():
     args = parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    out_dir = Path(args.output_dir)
+    timestamp = time.strftime("%Y%m%d_%H%M")
+    out_dir = Path(args.output_dir) / timestamp
     ckpt_dir = out_dir / "checkpoints"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     split_path = out_dir / "train_val_split.json"
@@ -114,7 +115,8 @@ def main():
             run = wandb.init(
                 project=args.wandb_project,
                 config=vars(args),
-                name=f"psegnet_{time.strftime('%Y%m%d_%H%M')}",
+                name=f"psegnet_{timestamp}",
+                dir=str(out_dir),
             )
         except ImportError:
             print("wandb not installed, continuing without logging")
