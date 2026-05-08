@@ -43,13 +43,12 @@ The top-level `segmentation/__init__.py` and `tracking/__init__.py` re-export th
 ```toml
 [project.optional-dependencies]
 predicted-labels = [
-    "pycpd",         # CPD non-rigid registration (on PyPI, same algo used in TrackPlant3D)
     "scikit-learn",  # MeanShift clustering for PSegNet instance segmentation
-    "scipy",         # cKDTree for KNN label propagation (already used in codebase)
+    "scipy",         # cKDTree for KNN label propagation, linear_sum_assignment for tracking
 ]
 ```
 
-`torch` is already a core dependency. `open3d` is too.
+`torch` and `open3d` are already core dependencies. `pycpd` is **not on PyPI** (the PyPI package is unrelated); the TrackPlant3D repo copy was bundled directly into `tracking/trackplant3d/_cpd/` as a private subpackage.
 
 ---
 
@@ -72,21 +71,25 @@ def load_psegnet(checkpoint_path: str | Path, device: str = "cuda") -> nn.Module
     ...
 
 def predict_organ_labels(
-    points: np.ndarray,          # (N, 3) — original full-resolution cloud
+    points: np.ndarray,              # (N, 3) — original full-resolution cloud
     model: nn.Module,
     device: str = "cuda",
     n_input_points: int = 4096,
     bandwidth: float = 0.6,
-    stem_semantic_class: int = 0,   # PSegNet class index for stem — verify against test.h5
-) -> np.ndarray:                    # (N,) predicted organ_label (0=stem, 1,2,3...=leaves)
+    stem_semantic_class: int = 0,    # verified: class 0 = stem for model_epoch199.pth
+    pre_rotation: np.ndarray | None = None,  # optional (3,3) rotation applied before inference
+) -> np.ndarray:                     # (N,) predicted organ_label (0=stem, 1,2,3...=leaves)
 ```
 
 Internal steps:
-1. VFPS to 4096 pts using Open3D voxel downsample + FPS (reuse `FarthestSampler` logic from `3DEPS(python).py`)
-2. Normalize (center + unit sphere) — same as training
-3. Forward pass → semantic argmax + MeanShift on instance embeddings
-4. Map: stem semantic class → label 0; other clusters → 1, 2, 3, ...
-5. KNN back-propagation to full N pts — reuse `transfer_semantic_labels_knn()` from `data_preprocessing/get_dense_gt_TrackPlant3D.py:107`
+1. Apply `pre_rotation` if provided (see coordinate system note below)
+2. FPS to 4096 pts (pure numpy greedy FPS)
+3. Normalize (center + unit sphere) — same as training
+4. Forward pass → semantic argmax + MeanShift on instance embeddings
+5. Map: stem semantic class → label 0; other clusters → 1, 2, 3, ...
+6. KNN back-propagation to full N pts via `cKDTree`
+
+**Coordinate system (important):** The checkpoint `model_epoch199.pth` was trained on Y-up point clouds. v2 PLYs for sorghum/tobacco/tomato1 have been orientation-corrected to Z-up. Feeding Z-up data directly collapses nearly all predictions to a single semantic class. Fix: pass `pre_rotation = R_ZUP_TO_YUP` (= `[[1,0,0],[0,0,1],[0,-1,0]]`) for those species. `create_predicted_labels_v3.py` does this automatically via `needs_orientation_correction(sequence_name)`. maize and tomato2 are natively Z-up — no rotation needed.
 
 ### `tracking/trackplant3d/downsampling.py`
 Adapt `TrackPlant3D/downsampling/3DEPS(python).py`:
@@ -152,33 +155,39 @@ The `_load_timepoint_data()` function already reads PLY fields generically — i
 
 CLI script that wires everything together:
 ```
-usage: create_predicted_labels_v3.py [--checkpoint PATH] [--device cuda] [--species maize tomato ...]
+usage: create_predicted_labels_v3.py [--checkpoint PATH] [--dataset-path data/TrackPlant3D/versions]
+                                     [--device cuda] [--species maize tomato ...]
 ```
 
 Per sequence:
 1. Load sequence from `PlantSequencesDataset v2`
-2. Run `predict_organ_labels()` on each timepoint
-3. Run `run_tracking_pipeline()` on the sequence
-4. For each timepoint: load v2 PLY, add `predicted_organ_label` field, write to `versions/v2/predicted_labels/{crop}/`
+2. For sorghum/tobacco/tomato1: apply `R_ZUP_TO_YUP` before PSegNet inference
+3. Run `predict_organ_labels()` on each timepoint
+4. Run `run_tracking_pipeline()` on the sequence
+5. For each timepoint: load v2 PLY, add `predicted_organ_label` field, write to `versions/v2/predicted_labels/{crop}/`
+
+Species filtering uses `seq_name.startswith(species)` — needed because sequence names are `tomato1_*` / `tomato2_*`, not `tomato_*`.
 
 Output directory:
 ```
 data/TrackPlant3D/versions/v2/predicted_labels/{crop}/{same_filename_as_v2}.ply
 ```
 
+Default `--dataset-path` is `data/TrackPlant3D/versions` (not `data/TrackPlant3D`).
+
 ---
 
-## Things to Verify Before/During Implementation
+## Things Verified During Implementation
 
-1. **PSegNet stem class index**: Run the existing `02test.py` on `test.h5` and inspect which semantic class index dominates the stem region of a known plant. This sets `stem_semantic_class` in `inference.py`.
+1. **PSegNet stem class index**: ✅ Class 0 = stem confirmed for `model_epoch199.pth` by cross-tabulating predicted semantic classes against GT organ labels on tomato1/sorghum sequences (with correct Y-up input).
 
-2. **Coordinate system**: v2 PLYs are Z-up (orientation corrected). Check if PSegNet inference quality is acceptable on Z-up clouds or if a pre-rotation is needed before inference.
+2. **Coordinate system**: ✅ Resolved — see note in `inference.py` section above. Z-up input collapses predictions; Y-up input via `pre_rotation` fixes it for sorghum/tobacco/tomato1.
 
-3. **Maize generalization**: PSegNet was trained on tomato/tobacco/sorghum — not maize. Segmentation quality on maize may be lower and worth noting in the paper.
+3. **Maize generalization**: ✅ Confirmed OOD — stem (class 0) is not detected for maize. Leaves are still segmented into instances but without a stem label. Worth noting in the paper.
 
-4. **`pycpd` PyPI version vs repo copy**: Verify the PyPI `pycpd` package is the same algorithm as the copy in TrackPlant3D (`pip show pycpd` or check changelog). If not, copy the repo's version directly into `tracking/`.
+4. **`pycpd` PyPI version**: ✅ PyPI `pycpd` is unrelated; bundled TrackPlant3D's copy as `tracking/trackplant3d/_cpd/` private subpackage instead.
 
-5. **Models subpackage**: There's already a `models/` directory with `siren.py` — `segmentation/` should be separate from this (it is, per the plan above).
+5. **Models subpackage**: ✅ `segmentation/` is correctly separate from `models/`.
 
 ---
 

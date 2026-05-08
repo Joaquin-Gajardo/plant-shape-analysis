@@ -25,6 +25,11 @@ full = [
     "wandb",
     "natsort",
 ]
+# Dependencies for the predicted-label pipeline (segmentation + tracking)
+predicted-labels = [
+    "scikit-learn",  # MeanShift clustering for PSegNet instance segmentation
+    "scipy",         # cKDTree for KNN label propagation, linear_sum_assignment for tracking
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

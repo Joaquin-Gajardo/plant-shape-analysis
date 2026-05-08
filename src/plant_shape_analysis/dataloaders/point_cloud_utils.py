@@ -14,7 +14,7 @@ import open3d as o3d
 
 def load_point_cloud(
     file_path: Path, use_ply: bool = True
-) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray]]:
+) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray], Optional[np.ndarray]]:
     """
     Load point cloud from txt or ply file, including normals if available.
 
@@ -26,32 +26,29 @@ def load_point_cloud(
         points: (N, 3) array of point coordinates
         labels: (N,) array of organ labels
         normals: (N, 3) array of normals, or None if not available
+        predicted_labels: (N,) array of predicted organ labels, or None if field absent
     """
     if use_ply:
-        # Load from PLY file
         pcd = o3d.t.io.read_point_cloud(str(file_path))
         points = pcd.point.positions.numpy()
         labels = pcd.point.organ_label.numpy().flatten().astype(int)
-
-        # Load normals if they exist in the PLY file
-        normals = None
-        if "normals" in pcd.point:
-            normals = pcd.point.normals.numpy()
-
-        return points, labels, normals
+        normals = pcd.point.normals.numpy() if "normals" in pcd.point else None
+        predicted_labels = (
+            pcd.point.predicted_organ_label.numpy().flatten().astype(int)
+            if "predicted_organ_label" in pcd.point
+            else None
+        )
+        return points, labels, normals, predicted_labels
     else:
-        # Load from TXT file
-        # File format: x, y, z, organ_instance_label
         data = np.loadtxt(file_path)
-        points = data[:, :3]  # x, y, z coordinates
-        labels = data[:, 3].astype(int)  # labels
-        normals = None  # TXT files don't have normals
-        return points, labels, normals
+        points = data[:, :3]
+        labels = data[:, 3].astype(int)
+        return points, labels, None, None
 
 
 def load_dense_point_cloud(
     sparse_file_path: Path, dense_path: Optional[Path], use_ply: bool = True
-) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray]]:
+) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray]]:
     """
     Load dense point cloud for a specific sequence and day if available.
 
@@ -64,14 +61,15 @@ def load_dense_point_cloud(
         points: (N, 3) array of point coordinates, or None if not found
         labels: (N,) array of organ labels, or None if not found
         normals: (N, 3) array of normals, or None if not available/found
+        predicted_labels: (N,) array of predicted organ labels, or None
     """
     if dense_path is None:
-        return None, None, None
+        return None, None, None, None
     crop_name = sparse_file_path.parent.name
     dense_file_path = dense_path / crop_name / sparse_file_path.name
     if dense_file_path.exists():
         return load_point_cloud(dense_file_path, use_ply=use_ply)
-    return None, None, None
+    return None, None, None, None
 
 
 def load_leaf_tips(

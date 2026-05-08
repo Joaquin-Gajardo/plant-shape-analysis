@@ -36,6 +36,18 @@ class PlantSequencesDataset(Dataset):
             },
             "orientation_corrected": True,  # PLY files have been corrected Y→Z rotation for some sequences during preprocessing, set to False when loading raw data in TXT format
         },
+        "v3": {
+            "data_dirs": {"sparse": "predicted_labels", "dense": None},
+            "download_info": {
+                "url": None,
+                "filename": None,
+                "extract_dir": "v2",  # predicted_labels/ lives inside the v2 directory
+                "size_mb": None,
+                "description": "Model-predicted organ labels (PSegNet + TrackPlant3D). Generate with scripts/create_predicted_labels_v3.py",
+            },
+            "orientation_corrected": True,
+            "no_auto_download": True,
+        },
     }
 
     def __init__(
@@ -90,7 +102,12 @@ class PlantSequencesDataset(Dataset):
 
         # Auto-download if version directory doesn't exist
         if not self.dataset_path.exists():
-            if auto_download:
+            if config.get("no_auto_download", False):
+                raise FileNotFoundError(
+                    f'Predicted labels not found at "{self.dataset_path.resolve()}". '
+                    "Run scripts/create_predicted_labels_v3.py first to generate them."
+                )
+            elif auto_download:
                 from plant_shape_analysis.utils.download_dataset import (
                     download_trackplant3d,
                 )
@@ -282,10 +299,10 @@ class PlantSequencesDataset(Dataset):
             day = int(day_match.group(1)) if day_match else 0
 
             # Load point cloud
-            points, labels, normals = self.load_point_cloud(file_path)
+            points, labels, normals, predicted_labels = self.load_point_cloud(file_path)
 
             # Load dense point cloud if available
-            dense_points, dense_labels, dense_normals = self.load_dense_point_cloud(
+            dense_points, dense_labels, dense_normals, _ = self.load_dense_point_cloud(
                 file_path
             )
 
@@ -328,6 +345,7 @@ class PlantSequencesDataset(Dataset):
                     "points": points,
                     "labels": labels,
                     "normals": normals,
+                    "predicted_labels": predicted_labels,
                     "dense_points": dense_points,
                     "dense_labels": dense_labels,
                     "leaf_tip_idxs": leaf_tip_idxs,
