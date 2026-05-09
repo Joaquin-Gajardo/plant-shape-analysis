@@ -619,6 +619,7 @@ def visualize_plant_sequence(
     show_principal_axes: bool = False,
     dense_points: bool = False,
     color_by_organ: bool = True,
+    use_predicted_labels: bool = False,
     normals_scale: float = 0.5,
     yaw_angle: float = 0.0,
     look_at: Optional[np.ndarray] = None,
@@ -641,6 +642,7 @@ def visualize_plant_sequence(
         show_principal_axes: Whether to show principal axes at each timepoint
         dense_points: Whether to use dense point clouds if available
         color_by_organ: If True, color by organ labels. If False, color by timepoint
+        use_predicted_labels: If True, color by predicted_labels instead of GT labels (requires color_by_organ=True)
         normals_scale: Scale factor for normal vectors visualization
         yaw_angle: Rotation angle in degrees around the z-axis to orient geometries (default: 0.0)
         look_at: Optional 3D point to look at in the visualization. Passed as np.ndarray of shape (3,). If None, center based on data.
@@ -692,7 +694,10 @@ def visualize_plant_sequence(
 
     # Process each timepoint
     points_key = "dense_points" if dense_points else "points"
-    labels_key = "dense_labels" if dense_points else "labels"
+    if use_predicted_labels:
+        labels_key = "predicted_labels"
+    else:
+        labels_key = "dense_labels" if dense_points else "labels"
     normals_key = "dense_normals" if dense_points else "normals"
 
     # Create rotation matrix if yaw_angle is specified
