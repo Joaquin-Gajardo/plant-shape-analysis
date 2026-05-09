@@ -268,7 +268,6 @@ def main():
 
         if run is not None:
             run.log({
-                "epoch": epoch + 1,
                 "lr": lr,
                 "train/loss": train_means["loss"],
                 "train/ce":   train_means["ce"],
@@ -279,7 +278,7 @@ def main():
                 "val/disc":   val_means["disc"],
                 "val/sm":     val_means["sm"],
                 "val/mIoU":   val_iou,
-            })
+            }, step=epoch + 1)
 
         # --- Checkpoints ---
         state = {
