@@ -23,42 +23,72 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from plant_shape_analysis.segmentation.psegnet.model import PSegNet
-from plant_shape_analysis.segmentation.psegnet.loss import psegnet_loss, discriminative_loss
+from plant_shape_analysis.segmentation.psegnet.loss import (
+    psegnet_loss,
+    discriminative_loss,
+)
 from plant_shape_analysis.segmentation.psegnet.dataset import PSegNetDataset
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def parse_args():
     p = argparse.ArgumentParser(description="Train PSegNet on TrackPlant3D v2")
     p.add_argument("--dataset_path", type=str, default="data/TrackPlant3D/versions")
-    p.add_argument("--output_dir",   type=str, default="outputs/psegnet_retrain")
-    p.add_argument("--epochs",       type=int, default=200)
-    p.add_argument("--batch_size",   type=int, default=4,
-                   help="Keep at 4 unless you have >24 GB VRAM (simmat is B×N×N)")
-    p.add_argument("--lr",           type=float, default=3e-3)
+    p.add_argument("--output_dir", type=str, default="outputs/psegnet_retrain")
+    p.add_argument("--epochs", type=int, default=200)
+    p.add_argument(
+        "--batch_size",
+        type=int,
+        default=4,
+        help="Keep at 4 unless you have >24 GB VRAM (simmat is B×N×N)",
+    )
+    p.add_argument("--lr", type=float, default=3e-3)
     p.add_argument("--weight_decay", type=float, default=1e-3)
-    p.add_argument("--step_size",    type=int,   default=10,
-                   help="Decay LR and BN momentum every this many epochs")
-    p.add_argument("--lr_decay",     type=float, default=0.7)
-    p.add_argument("--n_points",     type=int,   default=4096)
-    p.add_argument("--n_repeats",    type=int,   default=10,
-                   help="FPS repeats per frame for augmentation (paper uses 10)")
-    p.add_argument("--num_classes",  type=int,   default=2,
-                   help="Semantic classes: 2 = stem vs leaf")
-    p.add_argument("--num_workers",  type=int,   default=4,
-                   help="DataLoader workers; FPS is pure-Python so use ≥4")
+    p.add_argument(
+        "--step_size",
+        type=int,
+        default=10,
+        help="Decay LR and BN momentum every this many epochs",
+    )
+    p.add_argument("--lr_decay", type=float, default=0.7)
+    p.add_argument("--n_points", type=int, default=4096)
+    p.add_argument(
+        "--n_repeats",
+        type=int,
+        default=10,
+        help="FPS repeats per frame for augmentation (paper uses 10)",
+    )
+    p.add_argument(
+        "--num_classes", type=int, default=2, help="Semantic classes: 2 = stem vs leaf"
+    )
+    p.add_argument(
+        "--num_workers",
+        type=int,
+        default=4,
+        help="DataLoader workers; FPS is pure-Python so use ≥4",
+    )
     p.add_argument("--val_fraction", type=float, default=0.15)
-    p.add_argument("--save_every",   type=int,   default=5,
-                   help="Save a checkpoint every N epochs (plus always save best)")
-    p.add_argument("--resume",       type=str,   default=None,
-                   help="Path to checkpoint .pth to resume from")
-    p.add_argument("--use_all_sequences", action="store_true",
-                   help="Include held-out test sequences in training. Use for a final model after benchmarking is complete.")
-    p.add_argument("--no_wandb",     action="store_true",
-                   help="Disable W&B logging")
+    p.add_argument(
+        "--save_every",
+        type=int,
+        default=20,
+        help="Save a checkpoint every N epochs (plus always save best)",
+    )
+    p.add_argument(
+        "--resume",
+        type=str,
+        default=None,
+        help="Path to checkpoint .pth to resume from",
+    )
+    p.add_argument(
+        "--use_all_sequences",
+        action="store_true",
+        help="Include held-out test sequences in training. Use for a final model after benchmarking is complete.",
+    )
+    p.add_argument("--no_wandb", action="store_true", help="Disable W&B logging")
     p.add_argument("--wandb_project", type=str, default="psegnet-trackplant3d")
     return p.parse_args()
 
@@ -79,7 +109,7 @@ def set_bn_momentum(model, momentum):
 def semantic_iou(pred_logits, sem_labels, num_classes):
     """Mean IoU over semantic classes (numpy, no-grad)."""
     pred = pred_logits.argmax(dim=2).cpu().numpy().ravel()
-    gt   = sem_labels.cpu().numpy().ravel()
+    gt = sem_labels.cpu().numpy().ravel()
     ious = []
     for c in range(num_classes):
         tp = np.sum((pred == c) & (gt == c))
@@ -92,6 +122,7 @@ def semantic_iou(pred_logits, sem_labels, num_classes):
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main():
     args = parse_args()
@@ -114,6 +145,7 @@ def main():
     if not args.no_wandb:
         try:
             import wandb
+
             run = wandb.init(
                 project=args.wandb_project,
                 config=vars(args),
@@ -211,13 +243,13 @@ def main():
         # --- Train ---
         model.train()
         t0 = time.time()
-        train_totals = {"loss": 0., "ce": 0., "disc": 0., "sm": 0.}
+        train_totals = {"loss": 0.0, "ce": 0.0, "disc": 0.0, "sm": 0.0}
         n_batches = 0
 
         for batch in train_loader:
-            pts        = batch["points"].to(device)         # (B, N, 3)
-            sem_lbl    = batch["sem_labels"].to(device)     # (B, N)
-            inst_lbl   = batch["inst_labels"].to(device)    # (B, N)
+            pts = batch["points"].to(device)  # (B, N, 3)
+            sem_lbl = batch["sem_labels"].to(device)  # (B, N)
+            inst_lbl = batch["inst_labels"].to(device)  # (B, N)
 
             optimizer.zero_grad()
             sem_logits, inst_embed, simmat = model(pts)
@@ -228,9 +260,9 @@ def main():
             optimizer.step()
 
             train_totals["loss"] += total.item()
-            train_totals["ce"]   += ce.item()
+            train_totals["ce"] += ce.item()
             train_totals["disc"] += disc.item()
-            train_totals["sm"]   += sm.item()
+            train_totals["sm"] += sm.item()
             n_batches += 1
 
         train_means = {k: v / n_batches for k, v in train_totals.items()}
@@ -238,14 +270,14 @@ def main():
 
         # --- Validate ---
         model.eval()
-        val_totals = {"loss": 0., "ce": 0., "disc": 0., "sm": 0.}
+        val_totals = {"loss": 0.0, "ce": 0.0, "disc": 0.0, "sm": 0.0}
         val_ious = []
         n_val = 0
 
         with torch.no_grad():
             for batch in val_loader:
-                pts      = batch["points"].to(device)
-                sem_lbl  = batch["sem_labels"].to(device)
+                pts = batch["points"].to(device)
+                sem_lbl = batch["sem_labels"].to(device)
                 inst_lbl = batch["inst_labels"].to(device)
 
                 sem_logits, inst_embed, simmat = model(pts)
@@ -253,9 +285,9 @@ def main():
                     sem_logits, inst_embed, simmat, sem_lbl, inst_lbl
                 )
                 val_totals["loss"] += total.item()
-                val_totals["ce"]   += ce.item()
+                val_totals["ce"] += ce.item()
                 val_totals["disc"] += disc.item()
-                val_totals["sm"]   += sm.item()
+                val_totals["sm"] += sm.item()
                 val_ious.append(semantic_iou(sem_logits, sem_lbl, args.num_classes))
                 n_val += 1
 
@@ -271,18 +303,21 @@ def main():
         )
 
         if run is not None:
-            run.log({
-                "lr": lr,
-                "train/loss": train_means["loss"],
-                "train/ce":   train_means["ce"],
-                "train/disc": train_means["disc"],
-                "train/sm":   train_means["sm"],
-                "val/loss":   val_means["loss"],
-                "val/ce":     val_means["ce"],
-                "val/disc":   val_means["disc"],
-                "val/sm":     val_means["sm"],
-                "val/mIoU":   val_iou,
-            }, step=epoch + 1)
+            run.log(
+                {
+                    "lr": lr,
+                    "train/loss": train_means["loss"],
+                    "train/ce": train_means["ce"],
+                    "train/disc": train_means["disc"],
+                    "train/sm": train_means["sm"],
+                    "val/loss": val_means["loss"],
+                    "val/ce": val_means["ce"],
+                    "val/disc": val_means["disc"],
+                    "val/sm": val_means["sm"],
+                    "val/mIoU": val_iou,
+                },
+                step=epoch + 1,
+            )
 
         # --- Checkpoints ---
         state = {
