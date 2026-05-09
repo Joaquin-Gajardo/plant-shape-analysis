@@ -175,6 +175,12 @@ data/TrackPlant3D/versions/v2/predicted_labels/{crop}/{same_filename_as_v2}.ply
 
 Default `--dataset-path` is `data/TrackPlant3D/versions` (not `data/TrackPlant3D`).
 
+Additional flags added during retrain work:
+- `--num-classes`: defaults to **2** (retrained model). Pass `--num-classes 6` when using the original checkpoint `model_epoch199.pth`.
+- `--prerotation`: opt-in flag, only needed for the original checkpoint (trained on Y-up data). Omit for the retrained model.
+- `--output-dir`: override the default output path (useful for testing).
+- `--sequences`: run only on specific sequence names, e.g. `--sequences maize_control_plant1` (overrides `--species`).
+
 ---
 
 ## Things Verified During Implementation

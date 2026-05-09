@@ -109,13 +109,13 @@ def parse_args():
     p.add_argument(
         "--num-classes",
         type=int,
-        default=6,
-        help="Semantic classes the checkpoint was trained with (default: 6 for original, 2 for retrained)",
+        default=2,
+        help="Semantic classes the checkpoint was trained with (default: 2 for retrained model). Pass 6 when using the original checkpoint (model_epoch199.pth).",
     )
     p.add_argument(
-        "--no-prerotation",
+        "--prerotation",
         action="store_true",
-        help="Skip the Z-up→Y-up pre-rotation (use for checkpoints trained on Z-up data, e.g. the retrained model)",
+        help="Apply Z-up→Y-up pre-rotation before inference. Only needed for the original checkpoint (model_epoch199.pth), which was trained on Y-up data. The retrained model does not require this.",
     )
     return p.parse_args()
 
@@ -234,7 +234,7 @@ def main():
                 bandwidth=args.bandwidth,
                 stem_class=args.stem_class,
                 seed=args.seed,
-                apply_prerotation=not args.no_prerotation,
+                apply_prerotation=args.prerotation,
             )
             processed += 1
         except Exception as e:

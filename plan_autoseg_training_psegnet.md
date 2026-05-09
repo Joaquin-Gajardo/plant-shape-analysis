@@ -117,8 +117,8 @@ Argparse flags: `--dataset_path`, `--output_dir`, `--epochs`, `--batch_size`, `-
 `src/plant_shape_analysis/segmentation/psegnet/inference.py` already had `num_classes` and `pre_rotation` params — no changes needed. For the retrained checkpoint, callers pass `num_classes=2` to `load_psegnet()` and omit `pre_rotation` (defaults to `None`).
 
 `scripts/run_autoseg_pipeline.py` updated with:
-- `--num-classes` (default 6 for old checkpoint, pass 2 for retrained)
-- `--no-prerotation` flag (pass for retrained checkpoint — it was trained on Z-up data)
+- `--num-classes` (default 2 for retrained model; pass `--num-classes 6 --prerotation` when using the original checkpoint `model_epoch199.pth`)
+- `--prerotation` flag (pass only when using the original checkpoint trained on Y-up data; omit for the retrained model)
 - `--output-dir` to override the default output path (useful for testing)
 - `--sequences` to run only on specific sequence names (overrides `--species`)
 
@@ -163,22 +163,27 @@ Argparse flags: `--dataset_path`, `--output_dir`, `--epochs`, `--batch_size`, `-
 
 **Train from scratch:**
 ```bash
-conda run -n plant-shape-analysis python scripts/train_psegnet.py --dataset_path data/TrackPlant3D/versions --output_dir outputs/psegnet_retrain --epochs 200 --batch_size 4 --no_wandb
+conda run -n plant-shape-analysis python scripts/train_psegnet.py --dataset_path data/TrackPlant3D/versions --output_dir outputs/psegnet_retrain --epochs 200 --batch_size 8 --no_wandb
 ```
 
 **Resume from checkpoint:**
 ```bash
-conda run -n plant-shape-analysis python scripts/train_psegnet.py --dataset_path data/TrackPlant3D/versions --output_dir outputs/psegnet_retrain --epochs 200 --batch_size 4 --resume outputs/psegnet_retrain/YYYYMMDD_HHMM/checkpoints/best_model.pth --no_wandb
+conda run -n plant-shape-analysis python scripts/train_psegnet.py --dataset_path data/TrackPlant3D/versions --output_dir outputs/psegnet_retrain --epochs 200 --batch_size 8 --resume outputs/psegnet_retrain/YYYYMMDD_HHMM/checkpoints/best_model.pth --no_wandb
 ```
 
 **Run full inference pipeline with retrained checkpoint:**
 ```bash
-conda run -n plant-shape-analysis python scripts/run_autoseg_pipeline.py --checkpoint outputs/psegnet_retrain/YYYYMMDD_HHMM/checkpoints/best_model.pth --num-classes 2 --no-prerotation
+conda run -n plant-shape-analysis python scripts/run_autoseg_pipeline.py --checkpoint outputs/psegnet_retrain/YYYYMMDD_HHMM/checkpoints/best_model.pth --num-classes 2
 ```
 
 **Quick inference check on specific sequences:**
 ```bash
-conda run -n plant-shape-analysis python scripts/run_autoseg_pipeline.py --checkpoint PATH --num-classes 2 --no-prerotation --output-dir /tmp/test --sequences maize_control_plant1 maize_control_plant2
+conda run -n plant-shape-analysis python scripts/run_autoseg_pipeline.py --checkpoint PATH --num-classes 2 --output-dir /tmp/test --sequences maize_control_plant1 maize_control_plant2
+```
+
+**Using the original checkpoint (model_epoch199.pth):**
+```bash
+conda run -n plant-shape-analysis python scripts/run_autoseg_pipeline.py --checkpoint /mnt/Data/jgajardo/code/PlantNet-and-PSegNet/PSegNet/PSegNet_pytorch/models/checkpoints/model_epoch199.pth --num-classes 6 --prerotation
 ```
 
 **Load retrained model in Python:**
