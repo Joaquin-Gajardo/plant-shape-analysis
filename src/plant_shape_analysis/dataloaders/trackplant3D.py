@@ -37,7 +37,15 @@ class PlantSequencesDataset(Dataset):
             "orientation_corrected": True,  # PLY files have been corrected Y→Z rotation for some sequences during preprocessing, set to False when loading raw data in TXT format
         },
         "v3": {
-            "data_dirs": {"sparse": "predicted_labels", "dense": None},
+            "data_dirs": {
+                # "sparse": "predicted_labels_provided_checkpoint",
+                # "sparse": "predicted_labels", # retrained PSegNet
+                # Directory name only determines which PLY files are loaded. The "predicted_labels"
+                # timepoint key comes from reading the `predicted_organ_label` PLY field inside
+                # those files (see point_cloud_utils.load_point_cloud).
+                "sparse": "predicted_labels_combined",  # Sorghum come from old checkpoint preds (more consistent stem=0)
+                "dense": None,
+            },
             "download_info": {
                 "url": None,
                 "filename": None,
@@ -787,6 +795,7 @@ class LeafSequencesDataset(Dataset):
         self.plant_alignment_method = plant_alignment_method
         self._save_transformations = save_transformations
         self.estimate_normals = estimate_normals
+        self.label_field = "predicted_labels" if version == "v3" else "labels"
 
         # Build leaf timeseries samples
         self.leaf_timeseries = self._build_leaf_timeseries()
@@ -906,7 +915,8 @@ class LeafSequencesDataset(Dataset):
 
         for timepoint in sequence_data:
             # Extract stem points (label 0)
-            stem_mask = timepoint["labels"] == 0
+            # stem_mask = timepoint["labels"] == 0
+            stem_mask = timepoint[self.label_field] == 0
             stem_points = timepoint["points"][stem_mask]
 
             # Extract stem normals if available
@@ -931,7 +941,7 @@ class LeafSequencesDataset(Dataset):
         for timepoint_data in sequence_data:
             day = timepoint_data["day"]
             points = timepoint_data["points"]
-            labels = timepoint_data["labels"]
+            labels = timepoint_data[self.label_field]
             dense_points = timepoint_data["dense_points"]
             dense_labels = timepoint_data["dense_labels"]
             leaf_tip_idxs = timepoint_data["leaf_tip_idxs"]
