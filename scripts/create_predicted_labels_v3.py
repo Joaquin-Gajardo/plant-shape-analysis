@@ -95,6 +95,28 @@ def parse_args():
         default=0,
         help="Random seed for 3DEPS downsampling (default: 0)",
     )
+    p.add_argument(
+        "--sequences",
+        nargs="+",
+        default=None,
+        help="Run only on these specific sequence names (e.g. --sequences maize_control_plant1 maize_control_plant2). Overrides --species.",
+    )
+    p.add_argument(
+        "--output-dir",
+        default=None,
+        help="Override output directory (default: <dataset-path>/v2/predicted_labels/)",
+    )
+    p.add_argument(
+        "--num-classes",
+        type=int,
+        default=6,
+        help="Semantic classes the checkpoint was trained with (default: 6 for original, 2 for retrained)",
+    )
+    p.add_argument(
+        "--no-prerotation",
+        action="store_true",
+        help="Skip the Z-up→Y-up pre-rotation (use for checkpoints trained on Z-up data, e.g. the retrained model)",
+    )
     return p.parse_args()
 
 
@@ -108,14 +130,18 @@ def process_sequence(
     bandwidth: float,
     stem_class: int,
     seed: int,
+    apply_prerotation: bool = True,
 ):
     """Run the full pipeline for one plant sequence and save PLY files."""
     T = len(sequence_data)
     print(f"  [{sequence_name}] {T} timepoints")
 
-    # v2 PLYs for sorghum/tobacco/tomato1 are Z-up (orientation corrected);
-    # PSegNet was trained on Y-up data, so undo the correction before inference.
-    pre_rotation = _R_ZUP_TO_YUP if needs_orientation_correction(sequence_name) else None
+    # Old checkpoint was trained on Y-up; undo the Z-up correction for those species.
+    # Retrained checkpoint is trained on Z-up data — skip pre-rotation entirely.
+    pre_rotation = (
+        _R_ZUP_TO_YUP if (apply_prerotation and needs_orientation_correction(sequence_name))
+        else None
+    )
 
     # ── 1. PSegNet inference per timepoint ────────────────────────────────────
     psegnet_labels: list[np.ndarray] = []
@@ -169,8 +195,7 @@ def main():
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
-    # Output goes inside the v2 extract directory
-    output_dir = dataset_path / "v2" / "predicted_labels"
+    output_dir = Path(args.output_dir) if args.output_dir else dataset_path / "v2" / "predicted_labels"
     print(f"Output directory: {output_dir}")
 
     # Load v2 dataset (GT labels for file paths and point cloud coordinates)
@@ -179,7 +204,7 @@ def main():
 
     # Load PSegNet model
     print(f"Loading PSegNet from {checkpoint_path} on {args.device}...")
-    model = load_psegnet(checkpoint_path, device=args.device)
+    model = load_psegnet(checkpoint_path, device=args.device, num_classes=args.num_classes)
 
     # Process sequences by species
     sequences = dataset.get_sequence_names()
@@ -187,7 +212,10 @@ def main():
     processed = 0
 
     for seq_name in sequences:
-        if not any(seq_name.startswith(sp) for sp in args.species):
+        if args.sequences is not None:
+            if seq_name not in args.sequences:
+                continue
+        elif not any(seq_name.startswith(sp) for sp in args.species):
             continue
 
         seq_data = dataset.get_sequence_data(seq_name)
@@ -206,6 +234,7 @@ def main():
                 bandwidth=args.bandwidth,
                 stem_class=args.stem_class,
                 seed=args.seed,
+                apply_prerotation=not args.no_prerotation,
             )
             processed += 1
         except Exception as e:
