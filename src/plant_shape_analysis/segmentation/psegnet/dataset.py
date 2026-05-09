@@ -57,6 +57,9 @@ class PSegNetDataset(Dataset):
                          If the file exists the split is loaded from disk; otherwise
                          it is computed and saved. Pass None to skip persistence.
         augment:        Apply random Z-rotation and jitter (forced off for 'val').
+        use_all_sequences: If True, include TEST_SEQUENCES in training (no held-out split).
+                           Use this for a final model trained on all available data, after
+                           benchmarking is complete on the standard held-out split.
     """
 
     def __init__(
@@ -69,6 +72,7 @@ class PSegNetDataset(Dataset):
         random_state: int = 42,
         split_save_path: Optional[str | Path] = None,
         augment: bool = True,
+        use_all_sequences: bool = False,
     ):
         assert split in ("train", "val", "all"), f"split must be train/val/all, got {split!r}"
         self.split = split
@@ -82,8 +86,9 @@ class PSegNetDataset(Dataset):
         # Flatten to individual (points, labels) frames, skip test sequences
         frames: list[tuple[np.ndarray, np.ndarray]] = []
         species_per_frame: list[str] = []
+        excluded = set() if use_all_sequences else set(TEST_SEQUENCES)
         for seq in base.plant_timeseries:
-            if seq["sequence_name"] in TEST_SEQUENCES:
+            if seq["sequence_name"] in excluded:
                 continue
             sp = _species_from_name(seq["sequence_name"])
             for tp in seq["timepoints"]:

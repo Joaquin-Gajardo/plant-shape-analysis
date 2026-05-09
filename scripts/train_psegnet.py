@@ -55,6 +55,8 @@ def parse_args():
                    help="Save a checkpoint every N epochs (plus always save best)")
     p.add_argument("--resume",       type=str,   default=None,
                    help="Path to checkpoint .pth to resume from")
+    p.add_argument("--use_all_sequences", action="store_true",
+                   help="Include held-out test sequences in training. Use for a final model after benchmarking is complete.")
     p.add_argument("--no_wandb",     action="store_true",
                    help="Disable W&B logging")
     p.add_argument("--wandb_project", type=str, default="psegnet-trackplant3d")
@@ -133,6 +135,7 @@ def main():
         val_fraction=args.val_fraction,
         split_save_path=split_path,
         augment=True,
+        use_all_sequences=args.use_all_sequences,
     )
     val_ds = PSegNetDataset(
         dataset_path=args.dataset_path,
@@ -142,6 +145,7 @@ def main():
         val_fraction=args.val_fraction,
         split_save_path=split_path,
         augment=False,
+        use_all_sequences=args.use_all_sequences,
     )
     print(f"  train: {len(train_ds)} frames   val: {len(val_ds)} frames")
 
