@@ -53,8 +53,7 @@ mkdir -p sbatch_log
 
 python scripts/train_psegnet.py \
     --dataset_path "$DATASET_PATH" \
-    --batch_size 8 \
-    --epochs 200 \
+    --output_dir "$OUTPUT_DIR" \
     "$@"
 
 echo ""
