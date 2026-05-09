@@ -37,7 +37,7 @@ from plant_shape_analysis.segmentation.psegnet.dataset import PSegNetDataset
 def parse_args():
     p = argparse.ArgumentParser(description="Train PSegNet on TrackPlant3D v2")
     p.add_argument("--dataset_path", type=str, default="data/TrackPlant3D/versions")
-    p.add_argument("--output_dir", type=str, default="outputs/psegnet_retrain")
+    p.add_argument("--output_dir", type=str, default="outputs/psegnet_trackplant3d")
     p.add_argument("--epochs", type=int, default=200)
     p.add_argument(
         "--batch_size",
@@ -128,7 +128,7 @@ def main():
     args = parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    timestamp = time.strftime("%Y%m%d_%H%M")
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
     out_dir = Path(args.output_dir) / timestamp
     ckpt_dir = out_dir / "checkpoints"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
