@@ -42,8 +42,8 @@ def parse_args():
     p.add_argument(
         "--batch_size",
         type=int,
-        default=4,
-        help="Keep at 4 unless you have >24 GB VRAM (simmat is B×N×N)",
+        default=8,
+        help="Keep at 8 unless you have >24 GB VRAM (simmat is B×N×N)",
     )
     p.add_argument("--lr", type=float, default=3e-3)
     p.add_argument("--weight_decay", type=float, default=1e-3)
@@ -129,7 +129,8 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     timestamp = time.strftime("%Y%m%d_%H%M%S")
-    out_dir = Path(args.output_dir) / timestamp
+    run_name = f"{timestamp}_bs{args.batch_size}_lr{args.lr}"
+    out_dir = Path(args.output_dir) / run_name
     ckpt_dir = out_dir / "checkpoints"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     split_path = out_dir / "train_val_split.json"
@@ -149,7 +150,7 @@ def main():
             run = wandb.init(
                 project=args.wandb_project,
                 config=vars(args),
-                name=f"psegnet_{timestamp}",
+                name=f"psegnet_{run_name}",
                 dir=str(out_dir),
             )
         except ImportError:
