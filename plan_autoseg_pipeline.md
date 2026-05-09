@@ -29,7 +29,7 @@ src/plant_shape_analysis/
 │       └── pipeline.py              ← High-level: run full tracking on a sequence
 
 scripts/
-└── create_predicted_labels_v3.py     ← NEW: uses both modules to produce v3 dataset
+└── run_autoseg_pipeline.py     ← NEW: uses both modules to produce v3 dataset
 ```
 
 "Adapted" means the core algorithmic code is ported into the package as proper Python modules — no `sys.path` hacks, no subprocess calls. Only the relevant functions are taken (not the CLI boilerplate).
@@ -89,7 +89,7 @@ Internal steps:
 5. Map: stem semantic class → label 0; other clusters → 1, 2, 3, ...
 6. KNN back-propagation to full N pts via `cKDTree`
 
-**Coordinate system (important):** The checkpoint `model_epoch199.pth` was trained on Y-up point clouds. v2 PLYs for sorghum/tobacco/tomato1 have been orientation-corrected to Z-up. Feeding Z-up data directly collapses nearly all predictions to a single semantic class. Fix: pass `pre_rotation = R_ZUP_TO_YUP` (= `[[1,0,0],[0,0,1],[0,-1,0]]`) for those species. `create_predicted_labels_v3.py` does this automatically via `needs_orientation_correction(sequence_name)`. maize and tomato2 are natively Z-up — no rotation needed.
+**Coordinate system (important):** The checkpoint `model_epoch199.pth` was trained on Y-up point clouds. v2 PLYs for sorghum/tobacco/tomato1 have been orientation-corrected to Z-up. Feeding Z-up data directly collapses nearly all predictions to a single semantic class. Fix: pass `pre_rotation = R_ZUP_TO_YUP` (= `[[1,0,0],[0,0,1],[0,-1,0]]`) for those species. `run_autoseg_pipeline.py` does this automatically via `needs_orientation_correction(sequence_name)`. maize and tomato2 are natively Z-up — no rotation needed.
 
 ### `tracking/trackplant3d/downsampling.py`
 Adapt `TrackPlant3D/downsampling/3DEPS(python).py`:
@@ -151,11 +151,11 @@ The `_load_timepoint_data()` function already reads PLY fields generically — i
 
 ---
 
-## Script: `scripts/create_predicted_labels_v3.py`
+## Script: `scripts/run_autoseg_pipeline.py`
 
 CLI script that wires everything together:
 ```
-usage: create_predicted_labels_v3.py [--checkpoint PATH] [--dataset-path data/TrackPlant3D/versions]
+usage: run_autoseg_pipeline.py [--checkpoint PATH] [--dataset-path data/TrackPlant3D/versions]
                                      [--device cuda] [--species maize tomato ...]
 ```
 

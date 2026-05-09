@@ -116,7 +116,7 @@ Argparse flags: `--dataset_path`, `--output_dir`, `--epochs`, `--batch_size`, `-
 
 `src/plant_shape_analysis/segmentation/psegnet/inference.py` already had `num_classes` and `pre_rotation` params — no changes needed. For the retrained checkpoint, callers pass `num_classes=2` to `load_psegnet()` and omit `pre_rotation` (defaults to `None`).
 
-`scripts/create_predicted_labels_v3.py` updated with:
+`scripts/run_autoseg_pipeline.py` updated with:
 - `--num-classes` (default 6 for old checkpoint, pass 2 for retrained)
 - `--no-prerotation` flag (pass for retrained checkpoint — it was trained on Z-up data)
 - `--output-dir` to override the default output path (useful for testing)
@@ -173,12 +173,12 @@ conda run -n plant-shape-analysis python scripts/train_psegnet.py --dataset_path
 
 **Run full inference pipeline with retrained checkpoint:**
 ```bash
-conda run -n plant-shape-analysis python scripts/create_predicted_labels_v3.py --checkpoint outputs/psegnet_retrain/YYYYMMDD_HHMM/checkpoints/best_model.pth --num-classes 2 --no-prerotation
+conda run -n plant-shape-analysis python scripts/run_autoseg_pipeline.py --checkpoint outputs/psegnet_retrain/YYYYMMDD_HHMM/checkpoints/best_model.pth --num-classes 2 --no-prerotation
 ```
 
 **Quick inference check on specific sequences:**
 ```bash
-conda run -n plant-shape-analysis python scripts/create_predicted_labels_v3.py --checkpoint PATH --num-classes 2 --no-prerotation --output-dir /tmp/test --sequences maize_control_plant1 maize_control_plant2
+conda run -n plant-shape-analysis python scripts/run_autoseg_pipeline.py --checkpoint PATH --num-classes 2 --no-prerotation --output-dir /tmp/test --sequences maize_control_plant1 maize_control_plant2
 ```
 
 **Load retrained model in Python:**

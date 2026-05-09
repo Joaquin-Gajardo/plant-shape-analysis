@@ -43,7 +43,7 @@ class PlantSequencesDataset(Dataset):
                 "filename": None,
                 "extract_dir": "v2",  # predicted_labels/ lives inside the v2 directory
                 "size_mb": None,
-                "description": "Model-predicted organ labels (PSegNet + TrackPlant3D). Generate with scripts/create_predicted_labels_v3.py",
+                "description": "Model-predicted organ labels (PSegNet + TrackPlant3D). Generate with scripts/run_autoseg_pipeline.py",
             },
             "orientation_corrected": True,
             "no_auto_download": True,
@@ -105,7 +105,7 @@ class PlantSequencesDataset(Dataset):
             if config.get("no_auto_download", False):
                 raise FileNotFoundError(
                     f'Predicted labels not found at "{self.dataset_path.resolve()}". '
-                    "Run scripts/create_predicted_labels_v3.py first to generate them."
+                    "Run scripts/run_autoseg_pipeline.py first to generate them."
                 )
             elif auto_download:
                 from plant_shape_analysis.utils.download_dataset import (

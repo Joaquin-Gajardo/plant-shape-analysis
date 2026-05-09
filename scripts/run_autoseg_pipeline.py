@@ -10,7 +10,7 @@ For each plant sequence in the v2 dataset:
 Output directory: <dataset-path>/v2/predicted_labels/{crop}/
 
 Usage:
-    python scripts/create_predicted_labels_v3.py \\
+    python scripts/run_autoseg_pipeline.py \\
         --checkpoint /path/to/model_epoch199.pth \\
         --dataset-path data/TrackPlant3D/versions \\
         --device cuda
