@@ -126,5 +126,5 @@ Make sure you have the full installation with all dependencies.
 #### SIREN
 The following is an example of fitting a single leaf surface from a point cloud using Siren (Sitzmann et al., 2020). This can be used as a starting point for implementing other implicit neural representations to plant point clouds, and as a baseline for static leaf surface fitting or to expand to dynamic surface fitting.
 ```bash
-python fit_leaf_surface.py -p data/TrackPlant3D/versions/v1 --use_ply -s tomato2_control_plant2_leaf1 -t 0  # run with --help to see other CL options
+python scripts/fit_leaf_surface.py -p data/TrackPlant3D/versions/v1 --use_ply -s tomato2_control_plant2_leaf1 -t 0  # run with --help to see other CL options
 ```

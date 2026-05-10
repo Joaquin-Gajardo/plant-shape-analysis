@@ -2,10 +2,13 @@ import json
 from pathlib import Path
 
 import numpy as np
+
 import open3d as o3d
 from scipy.spatial import cKDTree
 
 from plant_shape_analysis.dataloaders.trackplant3D import PlantSequencesDataset
+
+ROOT = Path(__file__).parent.parent
 
 
 def stem_based_alignment(
@@ -363,7 +366,7 @@ def main():
     """
 
     # Load dataset without alignment
-    dataset_path = Path("data/TrackPlant3D/versions")
+    dataset_path = ROOT / "data/TrackPlant3D/versions"
 
     plant_dataset = PlantSequencesDataset(
         dataset_path,
@@ -420,7 +423,7 @@ def main():
     output_dir1 = save_aligned_sequence(
         sequential_results,
         sequence_name,
-        output_dir="output/aligned_sequences",
+        output_dir=ROOT / "output/aligned_sequences",
         method_name="sequential_stem",
     )
 
@@ -428,7 +431,7 @@ def main():
     output_dir2 = save_aligned_sequence(
         reference_results,
         sequence_name,
-        output_dir="output/aligned_sequences",
+        output_dir=ROOT / "output/aligned_sequences",
         method_name="reference_stem",
     )
 
@@ -436,7 +439,7 @@ def main():
     output_dir3 = save_aligned_sequence(
         two_stage_results,
         sequence_name,
-        output_dir="output/aligned_sequences",
+        output_dir=ROOT / "output/aligned_sequences",
         method_name="two_stage_sequential_1cm_shift_robust_with_chamfer",
     )
 

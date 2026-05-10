@@ -20,6 +20,8 @@ from plant_shape_analysis.vis.plot_functions import (
     visualize_point_cloud,
 )
 
+ROOT = Path(__file__).parent.parent
+
 
 def get_leaf(
     data_path: str = "data/TrackPlant3D",
@@ -379,12 +381,12 @@ def main(
 if __name__ == "__main__":
 
     parser = ArgumentParser()
-    parser.add_argument("-p", "--dataset_path", type=str, default="data/TrackPlant3D")
+    parser.add_argument("-p", "--dataset_path", type=str, default=str(ROOT / "data/TrackPlant3D"))
     parser.add_argument(
         "--use_ply", action="store_true", help="Use PLY files instead of txt files"
     )
     parser.add_argument(
-        "--results_folder", type=str, default="results/static_leaves/siren/dry_runs"
+        "--results_folder", type=str, default=str(ROOT / "results/static_leaves/siren/dry_runs")
     )
     parser.add_argument(
         "-s",
