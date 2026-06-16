@@ -69,6 +69,7 @@ class PlantSequencesDataset(Dataset):
         auto_download=True,
         manual_z_rotations=None,
         verbose=False,
+        exclude_sequences=None,
     ):
         """
         Initialize PlantSequencesDataset.
@@ -137,6 +138,7 @@ class PlantSequencesDataset(Dataset):
         self.estimate_normals = estimate_normals
         self.verbose = verbose
         self.manual_z_rotations = manual_z_rotations or {}
+        self.exclude_sequences = set(exclude_sequences or [])
 
         # Set paths from config
         self.sparse_path = self.dataset_path / data_dirs["sparse"]
@@ -236,6 +238,8 @@ class PlantSequencesDataset(Dataset):
         plant_timeseries = []
 
         for sequence_name, files in self.sequences.items():
+            if sequence_name in self.exclude_sequences:
+                continue
             sequence_data = self.get_sequence_data(sequence_name)
             plant_timeseries.append(
                 {
@@ -760,6 +764,7 @@ class LeafSequencesDataset(Dataset):
         save_transformations: bool = False,
         auto_download: bool = True,
         manual_z_rotations: Optional[dict] = None,
+        exclude_sequences: Optional[list] = None,
     ):
         """
         Initialize LeafSequencesDataset.
@@ -778,6 +783,7 @@ class LeafSequencesDataset(Dataset):
             auto_download: If True, automatically download dataset if not found (default: True)
             manual_z_rotations: Dict mapping sequence_name -> {timepoint_idx: angle_deg}
                                for manual Z-axis rotations (passed to PlantSequencesDataset)
+            exclude_sequences: Optional list of plant sequence names to skip entirely.
         """
         self.plant_dataset = PlantSequencesDataset(
             dataset_path,
@@ -787,6 +793,7 @@ class LeafSequencesDataset(Dataset):
             estimate_normals=estimate_plant_normals,
             auto_download=auto_download,
             manual_z_rotations=manual_z_rotations,
+            exclude_sequences=exclude_sequences,
         )
         self.dataset_path = Path(dataset_path)
         self.min_timepoints = min_timepoints
