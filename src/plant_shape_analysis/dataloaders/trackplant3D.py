@@ -885,7 +885,7 @@ class LeafSequencesDataset(Dataset):
             stem_timepoints = self._extract_stem_timepoints(sequence_data)
 
             # Track leaves across time points
-            leaf_tracks = self._track_leaves_across_time(sequence_data)
+            leaf_tracks = self._track_leaves_across_time(sequence_data, sequence_name)
 
             # Filter by minimum timepoints requirement
             for leaf_id, timepoints in leaf_tracks.items():
@@ -941,7 +941,7 @@ class LeafSequencesDataset(Dataset):
 
         return stem_timepoints
 
-    def _track_leaves_across_time(self, sequence_data):
+    def _track_leaves_across_time(self, sequence_data, sequence_name="unknown"):
         """Track individual leaves across time points in a sequence"""
         leaf_tracks = defaultdict(list)
 
@@ -963,6 +963,17 @@ class LeafSequencesDataset(Dataset):
                 # Extract points for this leaf
                 leaf_mask = labels == leaf_label
                 leaf_points = points[leaf_mask]
+
+                # Skip degenerate fragments — PCA requires at least 3 points.
+                # NOTE: this silently drops emerging leaves at their first appearance.
+                # For predicted labels this is rare (2 cases in v3), but with noisier
+                # segmentation models it could be more frequent and cause completeness issues.
+                if len(leaf_points) < 3:
+                    print(
+                        f"Warning: dropping {sequence_name} day={day} leaf={leaf_label} "
+                        f"({len(leaf_points)} pts < 3, PCA not possible)"
+                    )
+                    continue
 
                 # Extract normals for this leaf if available
                 leaf_normals = None
