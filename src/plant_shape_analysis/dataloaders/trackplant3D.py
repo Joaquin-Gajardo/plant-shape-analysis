@@ -43,7 +43,8 @@ class PlantSequencesDataset(Dataset):
                 # Directory name only determines which PLY files are loaded. The "predicted_labels"
                 # timepoint key comes from reading the `predicted_organ_label` PLY field inside
                 # those files (see point_cloud_utils.load_point_cloud).
-                "sparse": "predicted_labels_combined",  # Sorghum come from old checkpoint preds (more consistent stem=0)
+                # "sparse": "predicted_labels_combined",  # Sorghum come from old checkpoint preds (more consistent stem=0)
+                "sparse": "autoseg_tracking_allsequences",  # Sorghum come from old checkpoint preds (more consistent stem=0)
                 "dense": None,
             },
             "download_info": {
