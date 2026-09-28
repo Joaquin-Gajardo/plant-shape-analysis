@@ -1,11 +1,20 @@
 # plant-shape-analysis
-A repository for reconstructing and analyzing plant shape evolution using implicit neural representations, with a focus on leaf surface fitting and trait extraction from 3D point clouds.
+
+Tools for working with temporal 3D plant point clouds: PyTorch dataloaders for the
+TrackPlant3D dataset, a processed version of that dataset with leaf keypoint
+annotations and cleaned organ segmentations, and the preprocessing that produced it
+(organ alignment, tracking, segmentation, leaf meshing and trait extraction).
+
+The dataloaders are the part other projects depend on -- see
+[**Dataloader**](#dataloader) for the supported API. They are used by
+[GrowFields](https://github.com/Joaquin-Gajardo/growfields) (ECCV 2026), which
+implements the dynamic implicit-surface method; the `models/siren.py`.
 
 
 ## Installation
 
 ### Minimal installation (dataloaders only)
-For using just the dataloaders in other projects (e.g., CanFields):
+For using just the dataloaders in other projects (this is how GrowFields consumes it):
 ```bash
 git clone https://github.com/Joaquin-Gajardo/plant-shape-analysis.git
 cd plant-shape-analysis
@@ -21,39 +30,14 @@ For full functionality including visualization, alignment, and experiments:
 ```bash
 conda create -n plant-shape-analysis python>=3.9 # was tested with 3.12
 conda activate plant-shape-analysis
-# conda install -c conda-forge gcc gxx  # Optional: for X forwarding open3d window with PuTTy and XLaunch
 conda install ipykernel  # for Jupyter notebooks in VSCode
 pip install -e .[full]   # install package with all dependencies
 ```
 
-<details>
-<summary>labelCloud fork for labelling keypoints (optional)</summary>
 
-This is a fork of the original [labelCloud](https://github.com/ch-sa/labelCloud) repository that allows you to label and verify keypoint annotations in point clouds interactively. The fork is not currently public; the steps below are recorded for provenance of the keypoint annotations. We create a separate conda environment for this to avoid conflicts with other packages.
-```bash
-git clone https://github.com/Joaquin-Gajardo/labelCloud-dev
-cd labelCloud-dev
-conda create -n labelCloud-dev python=3.9
-conda activate labelCloud-dev
-pip install -r requirements.txt
-pip install -e . # install package
-conda install -c conda-forge gcc gxx # For X forwarding open3d window with PuTTy and XLaunch (optional)
-```
-Usage:
-1. Type `labelCloud` in the terminal to start the application
-2. Set up folder in `File -> Set point cloud folder`
-1. Set label folder in `File -> Set label folder`
-2. Start labelling points by clicking on `Pick sphere`
-5. When happy with the sphere, assign it to the class and press `Assign label`
-6. Repeat steps 4 and 5 for all leafs you want to label
-1. Press `ctrl + s` to save labels (.json + .bin file)
-8. Press `Next >>` to go to the next point cloud
-
-</details>
-
-## Data
+## Datasets
 ### TrackPlant3D
-The TrackPlant3D dataset (Li et al., COMPAG 2024) dataset contains 3D point clouds of plants at different growth stages with organ instance segmentation, which were sourced from different datasets, annotated and downsampled to 10'000 points per plant. The original dataset can be accessed [here](https://github.com/entarot/TrackPlant3D-3D-organ-growth-tracking-framework-for-organ-level-dynamic-phenotyping).
+The TrackPlant3D dataset (Li et al., COMPAG 2024) contains 3D point clouds of plants at different growth stages with organ instance segmentation, which were sourced from different datasets, annotated and downsampled to 10'000 points per plant. The original dataset can be accessed [here](https://github.com/entarot/TrackPlant3D-3D-organ-growth-tracking-framework-for-organ-level-dynamic-phenotyping).
 
 #### Download dataset
 We provide a processed version, with leaf keypoint annotations, cleaned segmentations and matched dense point clouds, available [here](https://polybox.ethz.ch/index.php/s/7XwferiX92aogn5/download) (v2, 130 MB). Please cite the original datasets if you use this dataset (see README within the dataset).
@@ -104,7 +88,7 @@ print(leaf_seq)
 # Visualize the leaf timeseries
 visualize_leaf_sequence(leaf_seq, window_name=f"{leaf_seq['sequence_name']}", spacing=50, show_coordinate_frame=True, show_connections=True)
 
-# Other utilites
+# Other utilities
 print(leaf_dataset.get_sequence_names()) # list all leaf sequence names
 
 # Get all leaves from a specific plant sequence
@@ -121,12 +105,16 @@ Run dataloader as main to visualize three best examples of dense leaf sequences:
 python src/plant_shape_analysis/dataloaders/trackplant3D.py
 ```
 
-## Training
-Make sure you have the full installation with all dependencies.
-### Fit static leaf surface
 
-#### SIREN
-The following is an example of fitting a single leaf surface from a point cloud using Siren (Sitzmann et al., 2020). This can be used as a starting point for implementing other implicit neural representations to plant point clouds, and as a baseline for static leaf surface fitting or to expand to dynamic surface fitting.
-```bash
-python scripts/fit_leaf_surface.py -p data/TrackPlant3D/versions/v1 --use_ply -s tomato2_control_plant2_leaf1 -t 0  # run with --help to see other CL options
-```
+## Citation
+
+If you use the processed dataset, please cite the original TrackPlant3D dataset
+(Li et al., *Computers and Electronics in Agriculture*, 2024), the source datasets
+it was assembled fromm, as well as our work [GrowFields](https://github.com/Joaquin-Gajardo/growfields) (ECCV 2026).
+The processed version of TrackPlant3D dataset redistributed here with the permission of TrackPlant3D's lead author (Prof. Dawei Li) and Pheno4D dataset's contact person (Prof. Lasse Klingbeil).
+
+## License
+
+MIT, see [LICENSE](LICENSE). That file also lists the third-party code included
+here and its terms: SIREN (`models/siren.py`), DeepSDF (`utils/sdf_meshing.py`),
+pycpd (`tracking/trackplant3d/_cpd/`) and PSegNet (`segmentation/psegnet/`).
