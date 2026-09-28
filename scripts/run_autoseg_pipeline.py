@@ -26,6 +26,7 @@ Notes:
 """
 
 import argparse
+import os
 from pathlib import Path
 
 import numpy as np
@@ -41,9 +42,10 @@ from plant_shape_analysis.tracking import run_tracking_pipeline
 # PSegNet was trained on Y-up data, so we undo the correction before inference.
 _R_ZUP_TO_YUP = np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0]], dtype=np.float64)
 
-DEFAULT_CHECKPOINT = (
-    "/mnt/Data/jgajardo/code/PlantNet-and-PSegNet"
-    "/PSegNet/PSegNet_pytorch/models/checkpoints/model_epoch199.pth"
+# Trained with the upstream PSegNet code; pass --checkpoint or set PSEGNET_CHECKPOINT.
+DEFAULT_CHECKPOINT = os.environ.get(
+    "PSEGNET_CHECKPOINT",
+    "models/checkpoints/psegnet_model_epoch199.pth",
 )
 ALL_SPECIES = ["maize", "sorghum", "tobacco", "tomato"]
 

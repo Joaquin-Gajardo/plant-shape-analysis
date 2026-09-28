@@ -1,0 +1,62 @@
+MIT License
+
+Copyright (c) 2026 ETH Zürich, Joaquin Gajardo.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+--------------------------------------------------------------------------------
+
+THIRD-PARTY CODE
+
+src/plant_shape_analysis/models/siren.py
+
+    From SIREN, https://github.com/vsitzmann/siren (Sitzmann et al., 2020).
+
+    MIT License
+
+    Copyright (c) 2020 Vincent Sitzmann
+
+src/plant_shape_analysis/utils/sdf_meshing.py
+
+    From DeepSDF, https://github.com/facebookresearch/DeepSDF.
+
+    MIT License
+
+    Copyright (c) 2019 Facebook, Inc. and its affiliates.
+
+src/plant_shape_analysis/tracking/trackplant3d/_cpd/
+
+    From the pycpd library, https://github.com/siavashk/pycpd, as bundled with
+    TrackPlant3D.
+
+    MIT License
+
+    Copyright (c) 2016 Siavash Khallaghi
+
+src/plant_shape_analysis/segmentation/psegnet/
+
+    Adapted from PlantNet-and-PSegNet,
+    https://github.com/Huang2002200/PlantNet-and-PSegNet (Li et al.), which
+    accompanies the PSegNet paper. The upstream repository states no licence
+    terms, so no licence grant is asserted or implied for this directory. It is
+    included for reference and is not required by the dataloaders that other
+    projects depend on.
+
+The full MIT licence text above applies to each MIT-licensed component named
+here; the copyright notices differ as stated.

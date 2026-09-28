@@ -29,7 +29,7 @@ pip install -e .[full]   # install package with all dependencies
 <details>
 <summary>labelCloud fork for labelling keypoints (optional)</summary>
 
-This is a fork of the original labelCloud repository that allows you to label and verify keypoint annotations in point clouds interactively. We create a separate conda environment for this to avoid conflicts with other packages.
+This is a fork of the original [labelCloud](https://github.com/ch-sa/labelCloud) repository that allows you to label and verify keypoint annotations in point clouds interactively. The fork is not currently public; the steps below are recorded for provenance of the keypoint annotations. We create a separate conda environment for this to avoid conflicts with other packages.
 ```bash
 git clone https://github.com/Joaquin-Gajardo/labelCloud-dev
 cd labelCloud-dev
@@ -56,7 +56,7 @@ Usage:
 The TrackPlant3D dataset (Li et al., COMPAG 2024) dataset contains 3D point clouds of plants at different growth stages with organ instance segmentation, which were sourced from different datasets, annotated and downsampled to 10'000 points per plant. The original dataset can be accessed [here](https://github.com/entarot/TrackPlant3D-3D-organ-growth-tracking-framework-for-organ-level-dynamic-phenotyping).
 
 #### Download dataset
-We provide a processed version, with leaf keypoint annotations, cleaned segmentations and matched dense point clouds, available in the following [link](https://polybox.ethz.ch/index.php/apps/files/files/4247413277?dir=/Share/datasets/TrackPlant3D). Please cite the original datasets if you use this dataset (see README within the dataset).
+We provide a processed version, with leaf keypoint annotations, cleaned segmentations and matched dense point clouds, available [here](https://polybox.ethz.ch/index.php/s/7XwferiX92aogn5/download) (v2, 130 MB). Please cite the original datasets if you use this dataset (see README within the dataset).
 
 **Automatic download:** The dataset will be downloaded automatically when you first use the dataloader if not found (130 MB).
 
@@ -79,6 +79,8 @@ We provide PyTorch Dataset classes for loading the TrackPlant3D dataset:
 
 - `PlantSequencesDataset`: Load plants as temporal sequences
 - `LeafSequencesDataset`: Load individual leaves as temporal sequences with optional PCA-based alignment
+
+These two classes, together with `plant_shape_analysis.dataloaders.normal_estimation.estimate_normals_for_point_cloud`, are the **supported public API**: they are what downstream projects import ([GrowFields](https://github.com/Joaquin-Gajardo/growfields), CanFields), so changes to them are breaking changes. The rest of `src/` is research code — usable, but not a stable interface.
 
 Example usage:
 ```python
