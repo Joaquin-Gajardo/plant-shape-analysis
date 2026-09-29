@@ -36,26 +36,23 @@ class PlantSequencesDataset(Dataset):
             },
             "orientation_corrected": True,  # PLY files have been corrected Y→Z rotation for some sequences during preprocessing, set to False when loading raw data in TXT format
         },
-        "v3": {
-            "data_dirs": {
-                # "sparse": "predicted_labels_provided_checkpoint",
-                # "sparse": "predicted_labels", # retrained PSegNet
-                # Directory name only determines which PLY files are loaded. The "predicted_labels"
-                # timepoint key comes from reading the `predicted_organ_label` PLY field inside
-                # those files (see point_cloud_utils.load_point_cloud).
-                # "sparse": "predicted_labels_combined",  # Sorghum come from old checkpoint preds (more consistent stem=0)
-                "sparse": "autoseg_tracking_allsequences",  # Sorghum come from old checkpoint preds (more consistent stem=0)
-                "dense": None,
-            },
+        # Same point clouds as v2, with auto-segmentation organ labels carried in the
+        # `predicted_organ_label` PLY field alongside the ground-truth `organ_label`.
+        # Not a separate download: the directory ships inside the v2 archive, which is
+        # why extract_dir is "v2". Select the labels with label_field="predicted_labels".
+        # "combined" in the directory name: sorghum labels come from the earlier
+        # PSegNet checkpoint, whose stem predictions were more consistently stem=0,
+        # and the rest from the retrained one. These are the labels the paper used.
+        "v2-autoseg": {
+            "data_dirs": {"sparse": "predicted_labels_combined", "dense": None},
             "download_info": {
-                "url": None,
-                "filename": None,
-                "extract_dir": "v2",  # predicted_labels/ lives inside the v2 directory
-                "size_mb": None,
-                "description": "Model-predicted organ labels (PSegNet + TrackPlant3D). Generate with scripts/run_autoseg_pipeline.py",
+                "url": "https://polybox.ethz.ch/index.php/s/7XwferiX92aogn5/download",
+                "filename": "v2.zip",
+                "extract_dir": "v2",
+                "size_mb": 130,
+                "description": "TrackPlant3D v2 point clouds with PSegNet auto-segmentation organ labels",
             },
             "orientation_corrected": True,
-            "no_auto_download": True,
         },
     }
 
@@ -143,6 +140,17 @@ class PlantSequencesDataset(Dataset):
 
         # Set paths from config
         self.sparse_path = self.dataset_path / data_dirs["sparse"]
+        if not self.sparse_path.exists():
+            # Auto-download only fires when the version directory is absent, so a copy
+            # of the archive downloaded before a directory was added to it is never
+            # refreshed: the check above passes and the new directory is still missing.
+            raise FileNotFoundError(
+                f'Version "{version}" expects a "{data_dirs["sparse"]}" directory '
+                f'inside "{self.dataset_path}", which is missing. This usually means '
+                "the dataset was downloaded before that directory was added to the "
+                f"archive. Delete {self.dataset_path} and run again to fetch the "
+                "current version."
+            )
         self.dense_path = (
             self.dataset_path / data_dirs["dense"] if data_dirs["dense"] else None
         )
