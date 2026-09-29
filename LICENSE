@@ -54,9 +54,9 @@ src/plant_shape_analysis/segmentation/psegnet/
     Adapted from PlantNet-and-PSegNet,
     https://github.com/Huang2002200/PlantNet-and-PSegNet (Li et al.), which
     accompanies the PSegNet paper. The upstream repository states no licence
-    terms, so no licence grant is asserted or implied for this directory. It is
-    included for reference and is not required by the dataloaders that other
-    projects depend on.
+    terms; this adapted code is included and redistributed here with the
+    permission of its lead author, granted 2026-09-29. Please cite the PSegNet
+    paper if you use it.
 
 The full MIT licence text above applies to each MIT-licensed component named
 here; the copyright notices differ as stated.

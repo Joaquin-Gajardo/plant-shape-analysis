@@ -7,8 +7,7 @@ annotations and cleaned organ segmentations, and the preprocessing that produced
 
 The dataloaders are the part other projects depend on -- see
 [**Dataloader**](#dataloader) for the supported API. They are used by
-[GrowFields](https://github.com/Joaquin-Gajardo/growfields) (ECCV 2026), which
-implements the dynamic implicit-surface method; the `models/siren.py`.
+[GrowFields](https://github.com/Joaquin-Gajardo/growfields) (ECCV 2026).
 
 
 ## Installation
