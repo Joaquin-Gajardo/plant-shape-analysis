@@ -40,7 +40,9 @@ pip install -e .[full]   # install package with all dependencies
 The TrackPlant3D dataset (Li et al., COMPAG 2024) contains 3D point clouds of plants at different growth stages with organ instance segmentation, which were sourced from different datasets, annotated and downsampled to 10'000 points per plant. The original dataset can be accessed [here](https://github.com/entarot/TrackPlant3D-3D-organ-growth-tracking-framework-for-organ-level-dynamic-phenotyping).
 
 #### Download dataset
-We provide a processed version, with leaf keypoint annotations, cleaned segmentations and matched dense point clouds, available [here](https://polybox.ethz.ch/index.php/s/7XwferiX92aogn5/download) (v2, 130 MB). Please cite the original datasets if you use this dataset (see README within the dataset).
+We provide a processed version, with leaf keypoint annotations, cleaned segmentations and matched dense point clouds, archived in the ETH Research Collection: <https://hdl.handle.net/20.500.11850/806887>. Please cite that record and the original datasets if you use this data (see the README inside the dataset).
+
+The dataloaders currently download v2 (130 MB) from [this link](https://polybox.ethz.ch/index.php/s/7XwferiX92aogn5/download); it will be repointed at the Research Collection once its files are released.
 
 **Automatic download:** The dataset will be downloaded automatically when you first use the dataloader if not found (130 MB).
 
