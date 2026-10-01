@@ -116,6 +116,7 @@ The processed version of TrackPlant3D dataset redistributed here with the permis
 
 ## License
 
-MIT, see [LICENSE](LICENSE). That file also lists the third-party code included
-here and its terms: SIREN (`models/siren.py`), DeepSDF (`utils/sdf_meshing.py`),
-pycpd (`tracking/trackplant3d/_cpd/`) and PSegNet (`segmentation/psegnet/`).
+MIT, see [LICENSE](LICENSE). Third-party code included here, and its terms, are
+listed in [NOTICE](NOTICE): SIREN (`models/siren.py`), DeepSDF
+(`utils/sdf_meshing.py`), pycpd (`tracking/trackplant3d/_cpd/`) and PSegNet
+(`segmentation/psegnet/`).

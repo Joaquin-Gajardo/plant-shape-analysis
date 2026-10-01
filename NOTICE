@@ -1,0 +1,43 @@
+THIRD-PARTY CODE
+================
+
+This repository includes code from the projects below. The code in this
+repository is MIT licensed (see LICENSE); the components named here keep the
+terms stated with each one.
+
+src/plant_shape_analysis/models/siren.py
+
+    From SIREN, https://github.com/vsitzmann/siren (Sitzmann et al., 2020).
+
+    MIT License
+
+    Copyright (c) 2020 Vincent Sitzmann
+
+src/plant_shape_analysis/utils/sdf_meshing.py
+
+    From DeepSDF, https://github.com/facebookresearch/DeepSDF.
+
+    MIT License
+
+    Copyright (c) 2019 Facebook, Inc. and its affiliates.
+
+src/plant_shape_analysis/tracking/trackplant3d/_cpd/
+
+    From the pycpd library, https://github.com/siavashk/pycpd, as bundled with
+    TrackPlant3D.
+
+    MIT License
+
+    Copyright (c) 2016 Siavash Khallaghi
+
+src/plant_shape_analysis/segmentation/psegnet/
+
+    Adapted from PlantNet-and-PSegNet,
+    https://github.com/Huang2002200/PlantNet-and-PSegNet (Li et al.), which
+    accompanies the PSegNet paper. The upstream repository states no licence
+    terms; this adapted code is included and redistributed here with the
+    permission of its lead author, granted 2026-09-29. Please cite the PSegNet
+    paper if you use it.
+
+The MIT licence text in LICENSE applies to each MIT-licensed component named
+here; the copyright notices differ as stated.
