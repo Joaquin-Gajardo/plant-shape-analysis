@@ -33,6 +33,12 @@ conda install ipykernel  # for Jupyter notebooks in VSCode
 pip install -e .[full]   # install package with all dependencies
 ```
 
+Use a **separate environment** for this. The `[full]` extras pull `scikit-image` and
+`scipy`, which resolve numpy to 2.x; installing them into an environment built for a
+downstream project that pins numpy 1.x (such as GrowFields, where torch, pytorch3d and
+open3d are all built against it) will break that environment. For using the dataloaders
+from another project, the minimal install above is what you want.
+
 
 ## Datasets
 ### TrackPlant3D
