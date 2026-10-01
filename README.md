@@ -39,11 +39,9 @@ pip install -e .[full]   # install package with all dependencies
 The TrackPlant3D dataset (Li et al., COMPAG 2024) contains 3D point clouds of plants at different growth stages with organ instance segmentation, which were sourced from different datasets, annotated and downsampled to 10'000 points per plant. The original dataset can be accessed [here](https://github.com/entarot/TrackPlant3D-3D-organ-growth-tracking-framework-for-organ-level-dynamic-phenotyping).
 
 #### Download dataset
-We provide a processed version, with leaf keypoint annotations, cleaned segmentations and matched dense point clouds, archived in the ETH Research Collection: <https://hdl.handle.net/20.500.11850/806887>. Please cite that record and the original datasets if you use this data (see the README inside the dataset).
+We provide a processed version, with leaf keypoint annotations, cleaned segmentations and matched dense point clouds, archived in the ETH Research Collection under CC BY 4.0: <https://hdl.handle.net/20.500.11850/806887>. Please cite that record and the original datasets if you use this data (see the README inside the dataset). Two versions are deposited: **v2** (229 MB, aligned, with normals and auto-segmentation labels) and **v1** (394 MB, unaligned, with the matched dense point clouds).
 
-The dataloaders currently download v2 (130 MB) from [this link](https://polybox.ethz.ch/index.php/s/7XwferiX92aogn5/download); it will be repointed at the Research Collection once its files are released.
-
-**Automatic download:** The dataset will be downloaded automatically when you first use the dataloader if not found (130 MB).
+**Automatic download:** The dataset will be downloaded automatically when you first use the dataloader if not found (v2, 229 MB).
 
 ```python
 from plant_shape_analysis import PlantSequencesDataset
@@ -53,8 +51,8 @@ dataset = PlantSequencesDataset("data/TrackPlant3D/versions") # will auto-downlo
 
 **Manual download (optional):**
 ```bash
-# Download v2 of the dataset (130.2 MB)
-wget -O v2.zip https://polybox.ethz.ch/index.php/s/7XwferiX92aogn5/download
+# Download v2 of the dataset (229 MB)
+wget -O v2.zip https://www.research-collection.ethz.ch/server/api/core/bitstreams/7d1aeb38-5441-4526-93d8-7acd5e0f12b6/content
 folder=data/TrackPlant3D/versions && mkdir -p $folder && unzip v2.zip -d $folder
 rm v2.zip
 ```

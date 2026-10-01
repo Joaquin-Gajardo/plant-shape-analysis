@@ -17,10 +17,10 @@ class PlantSequencesDataset(Dataset):
         "v1": {
             "data_dirs": {"sparse": "gt_corrected_v1", "dense": "dense"},
             "download_info": {
-                "url": "https://polybox.ethz.ch/index.php/s/mxiZwKfCfd39Rxx/download",
-                "filename": "v1.zip",
+                "url": "https://www.research-collection.ethz.ch/server/api/core/bitstreams/949ebbe8-28c3-4500-a5b2-ca73e6c795dc/content",
+                "filename": "TrackPlant3D_v1.zip",
                 "extract_dir": "v1",
-                "size_mb": 660,
+                "size_mb": 394,
                 "description": "TrackPlant3D v1 dataset with leaf keypoint annotations and dense point clouds",
             },
             "orientation_corrected": False,  # Needs Y->Z correction for some crops
@@ -28,10 +28,10 @@ class PlantSequencesDataset(Dataset):
         "v2": {
             "data_dirs": {"sparse": "gt_corrected_v2", "dense": None},
             "download_info": {
-                "url": "https://polybox.ethz.ch/index.php/s/7XwferiX92aogn5/download",
-                "filename": "v2.zip",
+                "url": "https://www.research-collection.ethz.ch/server/api/core/bitstreams/7d1aeb38-5441-4526-93d8-7acd5e0f12b6/content",
+                "filename": "TrackPlant3D_v2.zip",
                 "extract_dir": "v2",
-                "size_mb": 130,
+                "size_mb": 229,
                 "description": "TrackPlant3D v2 with pre-aligned point clouds and corrected normals (faster loading)",
             },
             "orientation_corrected": True,  # PLY files have been corrected Y→Z rotation for some sequences during preprocessing, set to False when loading raw data in TXT format
@@ -46,10 +46,10 @@ class PlantSequencesDataset(Dataset):
         "v2-autoseg": {
             "data_dirs": {"sparse": "predicted_labels_combined", "dense": None},
             "download_info": {
-                "url": "https://polybox.ethz.ch/index.php/s/7XwferiX92aogn5/download",
-                "filename": "v2.zip",
+                "url": "https://www.research-collection.ethz.ch/server/api/core/bitstreams/7d1aeb38-5441-4526-93d8-7acd5e0f12b6/content",
+                "filename": "TrackPlant3D_v2.zip",
                 "extract_dir": "v2",
-                "size_mb": 130,
+                "size_mb": 229,
                 "description": "TrackPlant3D v2 point clouds with PSegNet auto-segmentation organ labels",
             },
             "orientation_corrected": True,
