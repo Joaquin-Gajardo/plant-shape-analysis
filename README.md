@@ -43,6 +43,8 @@ We provide a processed version, with leaf keypoint annotations, cleaned segmenta
 
 **Automatic download:** The dataset will be downloaded automatically when you first use the dataloader if not found (v2, 229 MB).
 
+The archives were produced with this repository at commit `cb8b125` for v1 (2025-10-01) and `e3c7566` for v2 (2025-10-27).
+
 ```python
 from plant_shape_analysis import PlantSequencesDataset
 
