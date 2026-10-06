@@ -24,6 +24,7 @@ class PlantSequencesDataset(Dataset):
                 "description": "TrackPlant3D v1 dataset with leaf keypoint annotations and dense point clouds",
             },
             "orientation_corrected": False,  # Needs Y->Z correction for some crops
+            "label_field": "labels",
         },
         "v2": {
             "data_dirs": {"sparse": "gt_corrected_v2", "dense": None},
@@ -35,11 +36,14 @@ class PlantSequencesDataset(Dataset):
                 "description": "TrackPlant3D v2 with pre-aligned point clouds and corrected normals (faster loading)",
             },
             "orientation_corrected": True,  # PLY files have been corrected Y→Z rotation for some sequences during preprocessing, set to False when loading raw data in TXT format
+            "label_field": "labels",
         },
-        # Same point clouds as v2, with auto-segmentation organ labels carried in the
-        # `predicted_organ_label` PLY field alongside the ground-truth `organ_label`.
-        # Not a separate download: the directory ships inside the v2 archive, which is
-        # why extract_dir is "v2". Select the labels with label_field="predicted_labels".
+        # Same point clouds as v2, plus a folder with auto-segmentation organ labels
+        # carried in the `predicted_organ_label` PLY field alongside the ground-truth
+        # `organ_label`. The label folder is its own download, extracted alongside
+        # gt_corrected_v2 under versions/v2/, which is why extract_dir is "v2".
+        # Its "label_field" below makes those labels the default for this version,
+        # so callers need not select them by hand.
         # "combined" in the directory name: sorghum labels come from the earlier
         # PSegNet checkpoint, whose stem predictions were more consistently stem=0,
         # and the rest from the retrained one. These are the labels the paper used.
@@ -53,6 +57,7 @@ class PlantSequencesDataset(Dataset):
                 "description": "TrackPlant3D v2 point clouds with PSegNet auto-segmentation organ labels",
             },
             "orientation_corrected": True,
+            "label_field": "predicted_labels",
         },
     }
 
@@ -774,6 +779,7 @@ class LeafSequencesDataset(Dataset):
         auto_download: bool = True,
         manual_z_rotations: Optional[dict] = None,
         exclude_sequences: Optional[list] = None,
+        label_field: Optional[str] = None,
     ):
         """
         Initialize LeafSequencesDataset.
@@ -793,6 +799,12 @@ class LeafSequencesDataset(Dataset):
             manual_z_rotations: Dict mapping sequence_name -> {timepoint_idx: angle_deg}
                                for manual Z-axis rotations (passed to PlantSequencesDataset)
             exclude_sequences: Optional list of plant sequence names to skip entirely.
+            label_field: Which organ labels to build leaf tracks from -- "labels" for
+                        ground truth or "predicted_labels" for auto-segmentation. None
+                        (default) takes the version's own value from DATASET_CONFIGS,
+                        so "v2-autoseg" tracks on predicted labels and the ground-truth
+                        versions on `labels`. Pass it explicitly only to read labels the
+                        version does not default to.
         """
         self.plant_dataset = PlantSequencesDataset(
             dataset_path,
@@ -805,13 +817,20 @@ class LeafSequencesDataset(Dataset):
             exclude_sequences=exclude_sequences,
         )
         self.dataset_path = Path(dataset_path)
+        self.version = version
         self.min_timepoints = min_timepoints
         self.max_timepoints = max_timepoints
         self.apply_alignment = apply_alignment
         self.plant_alignment_method = plant_alignment_method
         self._save_transformations = save_transformations
         self.estimate_normals = estimate_normals
-        self.label_field = "predicted_labels" if version == "v3" else "labels"
+        # Defaults to the version's labels rather than being hardcoded per version:
+        # this used to read `"predicted_labels" if version == "v3" else "labels"`, and
+        # when `v3` was renamed `v2-autoseg` the test silently stopped matching, so
+        # autoseg runs built their leaf tracks from ground-truth labels instead.
+        self.label_field = (
+            label_field or PlantSequencesDataset.DATASET_CONFIGS[version]["label_field"]
+        )
 
         # Build leaf timeseries samples
         self.leaf_timeseries = self._build_leaf_timeseries()
@@ -958,6 +977,15 @@ class LeafSequencesDataset(Dataset):
             day = timepoint_data["day"]
             points = timepoint_data["points"]
             labels = timepoint_data[self.label_field]
+            if labels is None:
+                raise ValueError(
+                    f"Version {self.version!r} carries no {self.label_field!r} for "
+                    f"sequence {sequence_name!r}. Only versions whose PLYs hold the "
+                    f"matching field can be tracked on it -- "
+                    f"'predicted_labels' needs the auto-segmentation directory, which "
+                    f"'v2-autoseg' uses. Leave label_field unset to take the version's "
+                    f"own default."
+                )
             dense_points = timepoint_data["dense_points"]
             dense_labels = timepoint_data["dense_labels"]
             leaf_tip_idxs = timepoint_data["leaf_tip_idxs"]

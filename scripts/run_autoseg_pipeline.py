@@ -244,7 +244,9 @@ def main():
             raise
 
     print(f"\nDone. Processed {processed}/{total} sequences.")
-    print(f"Load with: PlantSequencesDataset('{args.dataset_path}', version='v3')")
+    print(
+        f"Load with: PlantSequencesDataset('{args.dataset_path}', version='v2-autoseg')"
+    )
 
 
 if __name__ == "__main__":
