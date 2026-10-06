@@ -40,10 +40,10 @@ class PlantSequencesDataset(Dataset):
         },
         # Same point clouds as v2, plus a folder with auto-segmentation organ labels
         # carried in the `predicted_organ_label` PLY field alongside the ground-truth
-        # `organ_label`. The label folder is its own download, extracted alongside
-        # gt_corrected_v2 under versions/v2/, which is why extract_dir is "v2".
-        # Its "label_field" below makes those labels the default for this version,
-        # so callers need not select them by hand.
+        # `organ_label`. Not a separate download: that folder ships inside the v2
+        # archive, which is why extract_dir is "v2" and why this version and v2 share
+        # a download URL. Its "label_field" below makes those labels the default for
+        # this version, so callers need not select them by hand.
         # "combined" in the directory name: sorghum labels come from the earlier
         # PSegNet checkpoint, whose stem predictions were more consistently stem=0,
         # and the rest from the retrained one. These are the labels the paper used.
