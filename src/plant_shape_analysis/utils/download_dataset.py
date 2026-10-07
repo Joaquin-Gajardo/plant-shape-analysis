@@ -40,7 +40,7 @@ def _get_dataset_config(version: str):
 
 def download_trackplant3d(
     target_dir: Optional[Path] = None,
-    version: str = "v1",
+    version: str = "v2",
     force: bool = False,
     verbose: bool = True,
 ) -> Path:
@@ -48,8 +48,9 @@ def download_trackplant3d(
     Download TrackPlant3D dataset if it doesn't exist.
 
     Args:
-        target_dir: Directory to download to. Defaults to data/TrackPlant3D/versions/
-        version: Dataset version (default: "v1")
+        target_dir: Directory to download to. Defaults to data/TrackPlant3D/versions/,
+            relative to the working directory, like the loader's dataset_path
+        version: Dataset version (default: "v2", the loader's default)
         force: If True, download even if dataset exists
         verbose: Print progress messages
 
@@ -67,9 +68,9 @@ def download_trackplant3d(
 
     # Determine target directory
     if target_dir is None:
-        # Default to data/TrackPlant3D/versions/ relative to package root
-        package_root = Path(__file__).parent.parent.parent.parent
-        target_dir = package_root / "data" / "TrackPlant3D" / "versions"
+        # Relative to the working directory, as TrackPlant3D's dataset_path is. The
+        # package root is wrong for a pip install, where it lands inside site-packages.
+        target_dir = Path("data") / "TrackPlant3D" / "versions"
     else:
         target_dir = Path(target_dir)
 
@@ -186,10 +187,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--target-dir",
         type=str,
-        help="Target directory (default: data/TrackPlant3D/versions/)",
+        help="Target directory (default: data/TrackPlant3D/versions/ in the working directory)",
     )
     parser.add_argument(
-        "--version", type=str, default="v1", help="Dataset version (default: v1)"
+        "--version", type=str, default="v2", help="Dataset version (default: v2)"
     )
     parser.add_argument(
         "--force", action="store_true", help="Force re-download if exists"
