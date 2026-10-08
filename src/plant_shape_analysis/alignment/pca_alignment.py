@@ -286,6 +286,14 @@ def pca_align_pair(pc1: np.ndarray, pc2: np.ndarray) -> Tuple[np.ndarray, np.nda
 #     return aligned_timepoints, transformations
 
 
+def _stem_for_day(stem_timepoints: List[Dict[str, Any]], day: Any) -> Dict[str, Any]:
+    """Stem frame for `day`, or the nearest day's if that one has no stem points."""
+    candidates = [tp for tp in stem_timepoints if len(tp["points"]) > 0]
+    if not candidates:
+        raise ValueError("No stem points on any day; cannot orient the leaf PCA axis")
+    return min(candidates, key=lambda tp: (abs(tp["day"] - day), tp["day"]))
+
+
 def correct_pca_axis_with_stem(
     leaf_timepoints: List[Dict[str, Any]], stem_timepoints: List[Dict[str, Any]]
 ) -> List[Dict[str, Any]]:
@@ -304,15 +312,22 @@ def correct_pca_axis_with_stem(
 
     Args:
         leaf_timepoints: List of leaf timepoint dictionaries
-        stem_timepoints: List of stem timepoint dictionaries (same days as leaves)
+        stem_timepoints: List of stem timepoint dictionaries, one per plant day. Each
+            leaf frame uses the stem from its own day, or the nearest day with stem
+            points if that day has none.
 
     Returns:
         List of transformation dictionaries with corrected "basis" field
     """
     transformations = []
-    corrected_bases = []
 
     # First pass: correct each timepoint independently using stem information
+    # Leaves only have the days they are observed on, stems every plant day: pair by
+    # day, not position, or a leaf that emerges late is oriented with an earlier stem.
+    stem_timepoints = [
+        _stem_for_day(stem_timepoints, tp["day"]) for tp in leaf_timepoints
+    ]
+
     for idx, (leaf_tp, stem_tp) in enumerate(zip(leaf_timepoints, stem_timepoints)):
         points = leaf_tp["points"]
         center = np.mean(points, axis=0)
@@ -367,7 +382,6 @@ def correct_pca_axis_with_stem(
                 corrected_basis[0] = -corrected_basis[0]
                 verification_passed = False
 
-        corrected_bases.append(corrected_basis)
         transformations.append(
             {
                 "stage": "correct_pca_stem",
@@ -392,7 +406,7 @@ def correct_pca_axis_with_stem(
         leaf_timepoints
     ):
         # Get all growth directions
-        growth_directions = np.array([basis[0] for basis in corrected_bases])
+        growth_directions = np.array([t["basis"][0] for t in transformations])
 
         # Use timepoints WITH tips as reference (more reliable)
         timepoints_with_tips = [
@@ -419,15 +433,14 @@ def correct_pca_axis_with_stem(
 
         # Check each timepoint without tip
         for idx in timepoints_without_tips:
-            current_direction = corrected_bases[idx][0]
+            basis = transformations[idx]["basis"]
 
             # Check alignment with reference
-            dot_product = np.dot(current_direction, reference_direction)
+            dot_product = np.dot(basis[0], reference_direction)
 
             if dot_product < 0:
                 # Pointing opposite direction, flip it
-                corrected_bases[idx][0] = -current_direction
-                transformations[idx]["basis"][0] = -current_direction
+                basis[0] = -basis[0]
                 transformations[idx]["temporal_flip"] = True
 
     return transformations
