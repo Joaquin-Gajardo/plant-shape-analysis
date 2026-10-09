@@ -501,6 +501,9 @@ class PlantSequencesDataset(Dataset):
             # Preserve original timepoint structure
             aligned_tp = timepoint_data.copy()
             aligned_tp["points"] = aligned_points
+            # Normals are directions: rotate only (identity for the reference)
+            if timepoint_data.get("normals") is not None:
+                aligned_tp["normals"] = timepoint_data["normals"] @ rotation_matrix.T
             aligned_tp["dense_points"] = aligned_dense_points
             aligned_tp["dense_labels"] = timepoint_data["dense_labels"]
             # Note: leaf_tip_idxs remain the same (indices into aligned points)
