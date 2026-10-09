@@ -16,10 +16,16 @@ from sklearn.decomposition import PCA
 from sklearn.neighbors import NearestNeighbors
 
 
-def remove_duplicates(points: np.ndarray, tolerance: float = 1e-6) -> np.ndarray:
-    """Remove duplicate points from point cloud."""
+def remove_duplicates(
+    points: np.ndarray, tolerance: float = 1e-6, return_indices: bool = False
+) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
+    """Remove duplicate points from point cloud.
+
+    The result is in lexicographic order, not input order. With `return_indices`, also
+    returns where each kept point sits in the input.
+    """
     if len(points) == 0:
-        return points
+        return (points, np.arange(0)) if return_indices else points
 
     # Use lexicographic sorting to find duplicates
     sorted_indices = np.lexsort(points.T)
@@ -30,6 +36,8 @@ def remove_duplicates(points: np.ndarray, tolerance: float = 1e-6) -> np.ndarray
     unique_mask[1:] = np.any(np.abs(np.diff(sorted_points, axis=0)) > tolerance, axis=1)
 
     unique_indices = sorted_indices[unique_mask]
+    if return_indices:
+        return points[unique_indices], unique_indices
     return points[unique_indices]
 
 
@@ -51,9 +59,12 @@ def triangulate_delaunay(
         dist_threshold: Distance threshold for neighborhood inclusion
 
     Returns:
-        Triangles as Mx3 array of point indices
+        Triangles as Mx3 array of indices into `points` (duplicate points are left
+        unreferenced)
     """
-    points = remove_duplicates(points[:, :3])
+    # Triangulate the deduplicated, reordered points, then map the triangles back to
+    # the caller's indices: callers index their own `points` with the result.
+    points, kept = remove_duplicates(points[:, :3], return_indices=True)
 
     # Build KNN index
     nbrs = NearestNeighbors(n_neighbors=knn, algorithm="kd_tree").fit(points)
@@ -129,7 +140,7 @@ def triangulate_delaunay(
     if triangles:
         triangles = np.array(triangles)
         triangles = np.unique(triangles, axis=0)
-        return triangles.astype(int)
+        return kept[triangles].astype(int)
     else:
         return np.array([]).reshape(0, 3).astype(int)
 
