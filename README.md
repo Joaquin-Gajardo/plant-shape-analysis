@@ -112,6 +112,30 @@ Run dataloader as main to visualize three best examples of dense leaf sequences:
 python src/plant_shape_analysis/dataloaders/trackplant3D.py
 ```
 
+#### Automatic organ labels (`v2-autoseg`)
+
+`version="v2-autoseg"` loads the v2 clouds with organ labels predicted by PSegNet (stem
+vs. leaf, then instance clustering) and tracked over time with TrackPlant3D, instead of
+the ground truth. These are the labels behind GrowFields' *w/ model segmentation*
+experiment. PSegNet was retrained on **all** sequences, test plants included, so they
+are not a held-out segmentation benchmark. They contain no stem points on days 8-14 of
+`sorghum_heat_plant1`; exclude that sequence (`exclude_sequences=["sorghum_heat_plant1"]`)
+when aligning leaves, which needs a stem in every frame.
+
+The deposited labels are the reference. Regenerating them needs `pip install -e .[full]`
+and a GPU.
+
+```bash
+# 1. Retrain PSegNet on every sequence, or skip this and use the published checkpoint
+#    (TODO: link to the ETH Research Collection record). All other settings are the defaults:
+#    200 epochs, batch size 8, 2 semantic classes, 15% of frames for validation.
+python scripts/train_psegnet.py --use_all_sequences --lr 5e-3
+# 2. Segment and track every sequence with the best checkpoint.
+python scripts/run_autoseg_pipeline.py \
+    --checkpoint outputs/psegnet_trackplant3d/<run>/checkpoints/best_model.pth \
+    --num-classes 2 --output-dir <your output dir>
+```
+
 
 ## Citation
 
