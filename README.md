@@ -117,8 +117,8 @@ python src/plant_shape_analysis/dataloaders/trackplant3D.py
 
 If you use the processed dataset, please cite the original TrackPlant3D dataset
 (Li et al., *Computers and Electronics in Agriculture*, 2024), the source datasets
-it was assembled fromm, as well as our work [GrowFields](https://github.com/Joaquin-Gajardo/growfields) (ECCV 2026).
-The processed version of TrackPlant3D dataset redistributed here with the permission of TrackPlant3D's lead author (Prof. Dawei Li) and Pheno4D dataset's contact person (Prof. Lasse Klingbeil).
+it was assembled from, as well as our work [GrowFields](https://github.com/Joaquin-Gajardo/growfields) (ECCV 2026).
+The processed dataset is redistributed with the permission of TrackPlant3D's lead author (Prof. Dawei Li) and Pheno4D's contact person (Prof. Lasse Klingbeil); the Conn et al. scans are licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 ## License
 
