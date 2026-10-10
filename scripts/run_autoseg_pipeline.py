@@ -1,5 +1,5 @@
 """
-Create the v3 predicted-labels dataset.
+Create automatic organ labels for the v2 point clouds (what `v2-autoseg` ships).
 
 For each plant sequence in the v2 dataset:
   1. Run PSegNet inference on each timepoint to get per-point organ labels.
@@ -7,22 +7,22 @@ For each plant sequence in the v2 dataset:
   3. Write a new PLY file (copy of the v2 PLY) with an extra `predicted_organ_label`
      int32 scalar field.
 
-Output directory: <dataset-path>/v2/predicted_labels/{crop}/
+Output directory: <dataset-path>/v2/predicted_labels/{crop}/ (or --output-dir).
+Load the result with `PlantSequencesDataset(..., version="v2-autoseg",
+sparse_dir=<output dir>)`; `version="v2-autoseg"` alone reads the deposited labels.
 
-Usage:
+Usage (the recipe behind the deposited labels is in the README, *Automatic organ labels*):
     python scripts/run_autoseg_pipeline.py \\
-        --checkpoint /path/to/model_epoch199.pth \\
-        --dataset-path data/TrackPlant3D/versions \\
-        --device cuda
+        --checkpoint outputs/psegnet_trackplant3d/<run>/checkpoints/best_model.pth \\
+        --num-classes 2
 
 Notes:
-  - PSegNet semantic class 0 = stem (verified against this checkpoint).
-  - v2 PLYs for sorghum/tobacco/tomato1 are Z-up (orientation corrected), but
-    PSegNet was trained on Y-up data. The script automatically applies the inverse
-    rotation before inference for those species.
-  - PSegNet was trained on tomato/tobacco/sorghum; maize is out-of-distribution
-    (stem is usually not detected for maize — expected behavior).
-  - Install optional deps first: pip install "plant-shape-analysis[predicted-labels]"
+  - PSegNet semantic class 0 = stem.
+  - The original PSegNet checkpoint (model_epoch199.pth) needs `--num-classes 6
+    --prerotation`: it was trained on Y-up data, and on tomato/tobacco/sorghum only, so
+    maize is out of distribution for it. Models retrained with
+    scripts/train_psegnet.py need neither.
+  - Inference is not deterministic: reruns differ on about 1% of points.
 """
 
 import argparse
@@ -244,8 +244,10 @@ def main():
             raise
 
     print(f"\nDone. Processed {processed}/{total} sequences.")
+    # version='v2-autoseg' alone reads the deposited labels, not these.
     print(
-        f"Load with: PlantSequencesDataset('{args.dataset_path}', version='v2-autoseg')"
+        f"Load with: PlantSequencesDataset('{args.dataset_path}', version='v2-autoseg', "
+        f"sparse_dir='{output_dir.resolve()}')"
     )
 
 

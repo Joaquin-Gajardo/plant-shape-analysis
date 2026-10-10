@@ -73,6 +73,7 @@ class PlantSequencesDataset(Dataset):
         manual_z_rotations=None,
         verbose=False,
         exclude_sequences=None,
+        sparse_dir=None,
     ):
         """
         Initialize PlantSequencesDataset.
@@ -89,6 +90,10 @@ class PlantSequencesDataset(Dataset):
                                Example: {"tobacco_control_plant1": {6: 144.0}}
             selected_sequences: Optional list of sequence names to process (default: None = all sequences)
             verbose: If True, print debug information during stem alignment (default: False)
+            sparse_dir: Read the point clouds from this directory instead of the version's
+                       own, e.g. labels generated with scripts/run_autoseg_pipeline.py
+                       (`version="v2-autoseg", sparse_dir=<its output dir>`). Relative
+                       paths are taken inside the version's directory.
 
         Important:
             When using 'stem_based' alignment with TXT files from the original dataset (v1 or custom versions),
@@ -144,7 +149,12 @@ class PlantSequencesDataset(Dataset):
         self.exclude_sequences = set(exclude_sequences or [])
 
         # Set paths from config
-        self.sparse_path = self.dataset_path / data_dirs["sparse"]
+        if sparse_dir is not None:
+            self.sparse_path = self.dataset_path / sparse_dir
+            if not self.sparse_path.exists():
+                raise FileNotFoundError(f'sparse_dir "{self.sparse_path}" does not exist.')
+        else:
+            self.sparse_path = self.dataset_path / data_dirs["sparse"]
         if not self.sparse_path.exists():
             # Auto-download only fires when the version directory is absent, so a copy
             # of the archive downloaded before a directory was added to it is never
@@ -783,6 +793,7 @@ class LeafSequencesDataset(Dataset):
         manual_z_rotations: Optional[dict] = None,
         exclude_sequences: Optional[list] = None,
         label_field: Optional[str] = None,
+        sparse_dir: Optional[str] = None,
     ):
         """
         Initialize LeafSequencesDataset.
@@ -808,6 +819,8 @@ class LeafSequencesDataset(Dataset):
                         so "v2-autoseg" tracks on predicted labels and the ground-truth
                         versions on `labels`. Pass it explicitly only to read labels the
                         version does not default to.
+            sparse_dir: Directory to read the point clouds from instead of the version's
+                        own (passed to PlantSequencesDataset).
         """
         self.plant_dataset = PlantSequencesDataset(
             dataset_path,
@@ -818,6 +831,7 @@ class LeafSequencesDataset(Dataset):
             auto_download=auto_download,
             manual_z_rotations=manual_z_rotations,
             exclude_sequences=exclude_sequences,
+            sparse_dir=sparse_dir,
         )
         self.dataset_path = Path(dataset_path)
         self.version = version
