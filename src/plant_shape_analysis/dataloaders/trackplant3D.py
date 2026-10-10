@@ -85,7 +85,8 @@ class PlantSequencesDataset(Dataset):
             alignment_method: Alignment method - None (no alignment), 'pca' (fast, approximate), 'icp' (slower, more accurate), or 'stem_based' (uses only stem points with sequential alignment and vertical correction)
             save_transformations: If True, save transformation matrices when applying alignment
             estimate_normals: If True, estimate normals for all plant point clouds
-            auto_download: If True, automatically download dataset if not found (default: True)
+            auto_download: If True, download the dataset if it is not found, or if an older
+                download lacks a directory this version needs (default: True)
             manual_z_rotations: Dict mapping sequence_name -> {timepoint_idx: angle_deg}
                                Example: {"tobacco_control_plant1": {6: 144.0}}
             selected_sequences: Optional list of sequence names to process (default: None = all sequences)
@@ -119,12 +120,7 @@ class PlantSequencesDataset(Dataset):
 
         # Auto-download if version directory doesn't exist
         if not self.dataset_path.exists():
-            if config.get("no_auto_download", False):
-                raise FileNotFoundError(
-                    f'Predicted labels not found at "{self.dataset_path.resolve()}". '
-                    "Run scripts/run_autoseg_pipeline.py first to generate them."
-                )
-            elif auto_download:
+            if auto_download:
                 from plant_shape_analysis.utils.download_dataset import (
                     download_trackplant3d,
                 )
@@ -155,16 +151,32 @@ class PlantSequencesDataset(Dataset):
                 raise FileNotFoundError(f'sparse_dir "{self.sparse_path}" does not exist.')
         else:
             self.sparse_path = self.dataset_path / data_dirs["sparse"]
+        if not self.sparse_path.exists() and auto_download:
+            # The version directory exists but predates a directory added to the
+            # archive (e.g. a new label set): fetch it. force=True adds what is missing
+            # and keeps the user's own files there.
+            from plant_shape_analysis.utils.download_dataset import download_trackplant3d
+
+            print(
+                f'"{data_dirs["sparse"]}" is missing from {self.dataset_path}; '
+                "updating it from the current archive (your own files are kept)..."
+            )
+            download_trackplant3d(
+                target_dir=self.dataset_path.parent, version=version, force=True
+            )
         if not self.sparse_path.exists():
-            # Auto-download only fires when the version directory is absent, so a copy
-            # of the archive downloaded before a directory was added to it is never
-            # refreshed: the check above passes and the new directory is still missing.
+            fix = (
+                "Pass auto_download=True to fetch it, or run"
+                if not auto_download
+                else "Run"
+            )
             raise FileNotFoundError(
                 f'Version "{version}" expects a "{data_dirs["sparse"]}" directory '
                 f'inside "{self.dataset_path}", which is missing. This usually means '
                 "the dataset was downloaded before that directory was added to the "
-                f"archive. Delete {self.dataset_path} and run again to fetch the "
-                "current version."
+                f"archive. {fix} (keeps your own files):\n"
+                f"  python -m plant_shape_analysis.utils.download_dataset --version "
+                f"{version} --target-dir {self.dataset_path.parent} --force"
             )
         self.dense_path = (
             self.dataset_path / data_dirs["dense"] if data_dirs["dense"] else None

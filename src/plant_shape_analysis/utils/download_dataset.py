@@ -2,6 +2,8 @@
 Utility functions for downloading datasets.
 """
 
+import shutil
+import tempfile
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -76,12 +78,20 @@ def download_trackplant3d(
 
     dataset_path = target_dir / extract_dir
 
-    # Check if dataset already exists
+    # Check if dataset already exists. A directory alone is not enough: an empty or
+    # partial one (an interrupted download, or an older archive) must not pass.
     if dataset_path.exists() and not force:
-        if verbose:
-            print(f"Dataset already exists at: {dataset_path}")
-            print("Use force=True to re-download")
-        return dataset_path
+        if check_dataset_exists(dataset_path, version):
+            if verbose:
+                print(f"Dataset already exists at: {dataset_path}")
+                print("Use force=True to re-download")
+            return dataset_path
+        missing = [d for d in dataset_info["expected_dirs"] if not (dataset_path / d).exists()]
+        raise RuntimeError(
+            f"{dataset_path} exists but is incomplete for version {version!r} "
+            f"(missing: {missing}). Re-download with force=True, which adds the missing "
+            "files and keeps any of your own."
+        )
 
     # Extract remaining info
     url = dataset_info["url"]
@@ -126,33 +136,39 @@ def download_trackplant3d(
             zip_path.unlink()
         raise RuntimeError(f"Failed to download dataset: {e}") from e
 
-    # Extract zip file
+    # Extract into a temporary directory and verify there, so a failed or partial
+    # extraction never leaves a dataset_path behind that a later call would accept.
     if verbose:
         print(f"  Extracting to {dataset_path}...")
 
+    tmp_dir = Path(tempfile.mkdtemp(prefix=f".{extract_dir}_", dir=target_dir))
     try:
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            zip_ref.extractall(target_dir)
+            zip_ref.extractall(tmp_dir)
+
+        extracted = tmp_dir / extract_dir
+        missing_dirs = [d for d in expected_dirs if not (extracted / d).exists()]
+        if missing_dirs:
+            raise RuntimeError(
+                f"Dataset extraction incomplete. Missing directories: {missing_dirs}"
+            )
+
+        if dataset_path.exists():  # force=True: update in place, keep extra files
+            shutil.copytree(extracted, dataset_path, dirs_exist_ok=True)
+        else:
+            extracted.rename(dataset_path)
 
         if verbose:
             print("  ✓ Extraction complete")
 
-    except Exception as e:
+    except zipfile.BadZipFile as e:
         raise RuntimeError(f"Failed to extract dataset: {e}") from e
     finally:
-        # Clean up zip file
+        shutil.rmtree(tmp_dir, ignore_errors=True)
         if zip_path.exists():
             zip_path.unlink()
             if verbose:
                 print("  ✓ Cleaned up temporary files")
-
-    # Verify dataset structure
-    missing_dirs = [d for d in expected_dirs if not (dataset_path / d).exists()]
-
-    if missing_dirs:
-        raise RuntimeError(
-            f"Dataset extraction incomplete. Missing directories: {missing_dirs}"
-        )
 
     if verbose:
         print(f"\n✓ Dataset ready at: {dataset_path}")
