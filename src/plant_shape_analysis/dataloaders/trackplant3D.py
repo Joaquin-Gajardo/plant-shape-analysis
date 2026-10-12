@@ -1119,9 +1119,16 @@ class LeafSequencesDataset(Dataset):
                 aligned_timepoints = [tp.copy() for tp in leaf_ts["timepoints"]]
 
                 # Stage 1: Correct PCA axis sign using stem information
-                stage1_trans = self._correct_pca_axis_with_stem(
-                    aligned_timepoints, leaf_ts["stem_timepoints"]
-                )
+                try:
+                    stage1_trans = self._correct_pca_axis_with_stem(
+                        aligned_timepoints, leaf_ts["stem_timepoints"]
+                    )
+                except ValueError as e:
+                    plant = leaf_ts["plant_sequence_name"]
+                    raise ValueError(
+                        f"{plant}: {e}. Exclude the plant with "
+                        f'exclude_sequences=["{plant}"].'
+                    ) from e
                 all_transformations.append(("correct_pca_stem", stage1_trans))
 
                 # Stage 2: Align main PCA axis to Z-axis (make leaves vertical)

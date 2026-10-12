@@ -1,6 +1,7 @@
 """Leaf PCA-axis orientation (`alignment.correct_pca_axis_with_stem`) on synthetic leaves."""
 
 import numpy as np
+import pytest
 
 from plant_shape_analysis.alignment.pca_alignment import correct_pca_axis_with_stem
 
@@ -32,11 +33,12 @@ def test_stem_is_matched_by_day_not_position():
         assert np.dot(t["basis"][0], X) > 0.99, t["day"]
 
 
-def test_missing_stem_day_uses_nearest_day():
+def test_missing_stem_day_raises():
+    # No guessing from another day's stem: the caller must exclude the plant.
     leaves = [_leaf(1), _leaf(2)]
-    stems = [_stem(0, 5.0), _stem(1, 0.5), {"day": 2, "points": np.empty((0, 3))}]
-    for t in correct_pca_axis_with_stem(leaves, stems):
-        assert np.dot(t["basis"][0], X) > 0.99, t["day"]
+    stems = [_stem(1, 0.5), {"day": 2, "points": np.empty((0, 3))}]
+    with pytest.raises(ValueError, match="no stem points on day 2"):
+        correct_pca_axis_with_stem(leaves, stems)
 
 
 def test_temporal_pass_flips_tipless_frame():

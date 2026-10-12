@@ -287,11 +287,11 @@ def pca_align_pair(pc1: np.ndarray, pc2: np.ndarray) -> Tuple[np.ndarray, np.nda
 
 
 def _stem_for_day(stem_timepoints: List[Dict[str, Any]], day: Any) -> Dict[str, Any]:
-    """Stem frame for `day`, or the nearest day's if that one has no stem points."""
-    candidates = [tp for tp in stem_timepoints if len(tp["points"]) > 0]
-    if not candidates:
-        raise ValueError("No stem points on any day; cannot orient the leaf PCA axis")
-    return min(candidates, key=lambda tp: (abs(tp["day"] - day), tp["day"]))
+    """Stem frame for `day`; raises if that day has no stem points."""
+    for tp in stem_timepoints:
+        if tp["day"] == day and len(tp["points"]) > 0:
+            return tp
+    raise ValueError(f"no stem points on day {day}, needed to orient its leaves")
 
 
 def correct_pca_axis_with_stem(
@@ -313,8 +313,7 @@ def correct_pca_axis_with_stem(
     Args:
         leaf_timepoints: List of leaf timepoint dictionaries
         stem_timepoints: List of stem timepoint dictionaries, one per plant day. Each
-            leaf frame uses the stem from its own day, or the nearest day with stem
-            points if that day has none.
+            leaf frame uses the stem from its own day, which must have stem points.
 
     Returns:
         List of transformation dictionaries with corrected "basis" field
