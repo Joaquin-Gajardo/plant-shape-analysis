@@ -45,9 +45,9 @@ from another project, the minimal install above is what you want.
 The TrackPlant3D dataset (Li et al., COMPAG 2024) contains 3D point clouds of plants at different growth stages with organ instance segmentation, which were sourced from different datasets, annotated and downsampled to 10'000 points per plant. The original dataset can be accessed [here](https://github.com/entarot/TrackPlant3D-3D-organ-growth-tracking-framework-for-organ-level-dynamic-phenotyping).
 
 #### Download dataset
-We provide a processed version, with leaf keypoint annotations, cleaned segmentations and matched dense point clouds, archived in the ETH Research Collection under CC BY 4.0: <https://hdl.handle.net/20.500.11850/806887>. Please cite that record and the original datasets if you use this data (see the README inside the dataset). Two versions are deposited: **v2** (229 MB, aligned, with normals and additional auto-segmentation labels) and **v1** (394 MB, unaligned, with the matched dense point clouds).
+We provide a processed version, with leaf keypoint annotations, cleaned segmentations and matched dense point clouds, archived in the ETH Research Collection under CC BY 4.0: <https://hdl.handle.net/20.500.11850/806887>. Please cite that record and the original datasets if you use this data (see the README inside the dataset). Two versions are deposited: **v2** (235 MB, aligned, with normals, plus automatic organ labels and the segmentation model behind them) and **v1** (394 MB, unaligned, with the matched dense point clouds).
 
-**Automatic download:** The dataset will be downloaded automatically when you first use the dataloader if not found (v2, 229 MB).
+**Automatic download:** The dataset will be downloaded automatically when you first use the dataloader if not found (v2, 235 MB).
 
 The archives were produced with this repository at commit `cb8b125` for v1 (2025-10-01) and `e3c7566` for v2 (2025-10-27).
 
@@ -59,8 +59,8 @@ dataset = PlantSequencesDataset("data/TrackPlant3D/versions") # will auto-downlo
 
 **Manual download (optional):**
 ```bash
-# Download v2 of the dataset (229 MB)
-wget -O v2.zip https://www.research-collection.ethz.ch/server/api/core/bitstreams/7d1aeb38-5441-4526-93d8-7acd5e0f12b6/content
+# Download v2 of the dataset (235 MB)
+wget -O v2.zip https://www.research-collection.ethz.ch/server/api/core/bitstreams/f9202885-a045-4c43-bc5d-765ace0c563f/content
 folder=data/TrackPlant3D/versions && mkdir -p $folder && unzip v2.zip -d $folder
 rm v2.zip
 ```
@@ -126,8 +126,9 @@ The deposited labels are the reference. Regenerating them needs `pip install -e 
 and a GPU.
 
 ```bash
-# 1. Retrain PSegNet on every sequence, or skip this and use the published checkpoint
-#    (TODO: link to the ETH Research Collection record). All other settings are the defaults:
+# 1. Retrain PSegNet on every sequence, or skip this and use the published checkpoint,
+#    downloaded with v2 to <dataset dir>/v2/psegnet_checkpoint/best_model.pth.
+#    All other settings are the defaults:
 #    200 epochs, batch size 8, 2 semantic classes, 15% of frames for validation.
 python scripts/train_psegnet.py --use_all_sequences --lr 5e-3
 # 2. Segment and track every sequence with the best checkpoint.

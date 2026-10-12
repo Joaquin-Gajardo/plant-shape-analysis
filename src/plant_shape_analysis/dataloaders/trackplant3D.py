@@ -17,7 +17,7 @@ class PlantSequencesDataset(Dataset):
         "v1": {
             "data_dirs": {"sparse": "gt_corrected_v1", "dense": "dense"},
             "download_info": {
-                "url": "https://www.research-collection.ethz.ch/server/api/core/bitstreams/949ebbe8-28c3-4500-a5b2-ca73e6c795dc/content",
+                "url": "https://www.research-collection.ethz.ch/server/api/core/bitstreams/5533dae0-ffcb-4de0-8589-f4300ed13c64/content",
                 "filename": "TrackPlant3D_v1.zip",
                 "extract_dir": "v1",
                 "size_mb": 394,
@@ -29,10 +29,10 @@ class PlantSequencesDataset(Dataset):
         "v2": {
             "data_dirs": {"sparse": "gt_corrected_v2", "dense": None},
             "download_info": {
-                "url": "https://www.research-collection.ethz.ch/server/api/core/bitstreams/7d1aeb38-5441-4526-93d8-7acd5e0f12b6/content",
+                "url": "https://www.research-collection.ethz.ch/server/api/core/bitstreams/f9202885-a045-4c43-bc5d-765ace0c563f/content",
                 "filename": "TrackPlant3D_v2.zip",
                 "extract_dir": "v2",
-                "size_mb": 229,
+                "size_mb": 235,
                 "description": "TrackPlant3D v2 with pre-aligned point clouds and corrected normals (faster loading)",
             },
             "orientation_corrected": True,  # PLY files have been corrected Y→Z rotation for some sequences during preprocessing, set to False when loading raw data in TXT format
@@ -44,16 +44,16 @@ class PlantSequencesDataset(Dataset):
         # archive, which is why extract_dir is "v2" and why this version and v2 share
         # a download URL. Its "label_field" below makes those labels the default for
         # this version, so callers need not select them by hand.
-        # "combined" in the directory name: sorghum labels come from the earlier
-        # PSegNet checkpoint, whose stem predictions were more consistently stem=0,
-        # and the rest from the retrained one. These are the labels the paper used.
+        # PSegNet retrained on all sequences, then tracked with TrackPlant3D; these are
+        # the labels the GrowFields paper used. The checkpoint ships alongside, in
+        # v2/psegnet_checkpoint/. The README gives the recipe.
         "v2-autoseg": {
-            "data_dirs": {"sparse": "predicted_labels_combined", "dense": None},
+            "data_dirs": {"sparse": "autoseg_tracking_allsequences", "dense": None},
             "download_info": {
-                "url": "https://www.research-collection.ethz.ch/server/api/core/bitstreams/7d1aeb38-5441-4526-93d8-7acd5e0f12b6/content",
+                "url": "https://www.research-collection.ethz.ch/server/api/core/bitstreams/f9202885-a045-4c43-bc5d-765ace0c563f/content",
                 "filename": "TrackPlant3D_v2.zip",
                 "extract_dir": "v2",
-                "size_mb": 229,
+                "size_mb": 235,
                 "description": "TrackPlant3D v2 point clouds with PSegNet auto-segmentation organ labels",
             },
             "orientation_corrected": True,
