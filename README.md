@@ -65,6 +65,33 @@ folder=data/TrackPlant3D/versions && mkdir -p $folder && unzip v2.zip -d $folder
 rm v2.zip
 ```
 
+<details>
+<summary><b>Known issue:</b> the matrices in v2's <code>transformations/</code> are wrong. They are only a record of the alignment and nothing uses them; the point clouds are fine.</summary>
+
+You need them only if you want to recover v1 (the original data) from v2 yourself. The
+alignment itself was correct, but its `composed_matrix` and `inverse_matrix` were recorded
+wrongly in these JSONs (fixed in v0.4.1). To regenerate them, rerun the same alignment on v1
+with v0.4.1 or later. It writes one JSON per sequence to
+`data/TrackPlant3D/versions/v1/transformations/`, which you can move to `v2/transformations/`
+to replace the deposited ones:
+
+```python
+from plant_shape_analysis import PlantSequencesDataset
+
+manual_z_rotations = {  # as used for v2, see scripts/save_aligned_plants_with_normals.py
+    "tobacco_control_plant1": {6: -146.0},
+    "tobacco_shade_plant3": {3: -89, 2: 61, 1: 203, 0: 113},
+}
+PlantSequencesDataset("data/TrackPlant3D/versions", version="v1", alignment_method="stem_based",
+                      manual_z_rotations=manual_z_rotations, save_transformations=True)
+```
+
+`inverse_matrix` then maps each v2 cloud back onto v1 as loaded. Where `y_to_z_corrected_on_load`
+is true (sorghum, tobacco, tomato1), the loader had first turned v1's raw files from Y-up to Z-up
+(`point_cloud_utils.correct_orientation`).
+
+</details>
+
 #### Dataloader
 We provide PyTorch Dataset classes for loading the TrackPlant3D dataset:
 

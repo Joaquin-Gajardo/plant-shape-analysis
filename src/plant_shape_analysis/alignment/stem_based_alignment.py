@@ -229,10 +229,10 @@ def align_plant_sequence_stem_based(
         # Apply rotation to all points (around origin)
         aligned_timepoints[i]["points"] = points @ rot_matrix.T
 
-        # Update transformation - compose with existing rotation from Stage 1
-        prev_rot = transformations[i]["rotation"]
-        total_rot = rot_matrix @ prev_rot
-        transformations[i]["rotation"] = total_rot
+        # Compose with Stage 1: the rotation acts on the already-translated points,
+        # so it rotates the Stage 1 translation too
+        transformations[i]["rotation"] = rot_matrix @ transformations[i]["rotation"]
+        transformations[i]["translation"] = rot_matrix @ transformations[i]["translation"]
         transformations[i]["stage"] = "stage2_orient_to_z"
 
     # Stage 3: Vertical correction - align stem base centroid to origin
@@ -306,13 +306,12 @@ def align_plant_sequence_stem_based(
             # Apply rotation to all points
             curr_aligned["points"] = curr_aligned["points"] @ z_rot.T
 
-            # Update transformation if not reference
-            if timepoint_idx > 0:
-                # Compose with existing transformation
-                prev_rot = transformations[timepoint_idx]["rotation"]
-                total_rot = z_rot @ prev_rot
-                transformations[timepoint_idx]["rotation"] = total_rot
-                transformations[timepoint_idx]["manual_z_rotation_deg"] = angle_deg
-                transformations[timepoint_idx]["stage"] = "stage4_manual_z_rotation"
+            # Compose with the earlier stages, the reference frame included. The
+            # vertical shift lies along Z, which a Z rotation leaves unchanged.
+            trans = transformations[timepoint_idx]
+            trans["rotation"] = z_rot @ trans["rotation"]
+            trans["translation"] = z_rot @ trans["translation"]
+            trans["manual_z_rotation_deg"] = angle_deg
+            trans["stage"] = "stage4_manual_z_rotation"
 
     return aligned_timepoints, transformations

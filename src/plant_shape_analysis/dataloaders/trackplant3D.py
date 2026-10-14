@@ -596,41 +596,16 @@ class PlantSequencesDataset(Dataset):
             result_tp = timepoint_data.copy()
             result_tp["points"] = aligned_tp["points"]
 
-            # Transform dense points if they exist
+            # Same transform as the sparse points, the reference frame included:
+            # x' = R x + translation + vertical_shift
             if timepoint_data["dense_points"] is not None:
-                dense_points = timepoint_data["dense_points"]
+                result_tp["dense_points"] = (
+                    timepoint_data["dense_points"] @ rotation.T + translation + vertical_shift
+                )
 
-                if i == 0:
-                    # Reference frame - only apply vertical shift if present
-                    if vertical_shift is not None and np.any(vertical_shift != 0):
-                        aligned_dense_points = dense_points + vertical_shift
-                    else:
-                        aligned_dense_points = dense_points
-                else:
-                    # Apply same transformation as sparse points
-                    # rotation and translation are cumulative from all stages
-                    # vertical_shift is applied last (stage 2 or 3)
-                    if vertical_shift is not None and np.any(vertical_shift != 0):
-                        # Apply rotation, translation, and vertical shift
-                        aligned_dense_points = (
-                            dense_points @ rotation.T + translation + vertical_shift
-                        )
-                    else:
-                        # Apply rotation and translation only
-                        aligned_dense_points = dense_points @ rotation.T + translation
-
-                result_tp["dense_points"] = aligned_dense_points
-
-            # Transform normals if they exist (normals are direction vectors, only rotate)
+            # Normals are directions: rotate only
             if timepoint_data.get("normals") is not None:
-                normals = timepoint_data["normals"]
-
-                if i == 0:
-                    # Reference frame - no rotation
-                    result_tp["normals"] = normals
-                else:
-                    # Apply cumulative rotation (no translation for direction vectors)
-                    result_tp["normals"] = normals @ rotation.T
+                result_tp["normals"] = timepoint_data["normals"] @ rotation.T
 
             # Note: leaf_tip_idxs remain the same (indices into aligned points)
             # The aligned coordinates are automatically correct since points are aligned
@@ -736,7 +711,16 @@ class PlantSequencesDataset(Dataset):
         filename = f"{sequence_name}_transformations.json"
         filepath = save_path / filename
 
-        json_data = {"sequence_name": sequence_name, "timepoints": []}
+        json_data = {
+            "sequence_name": sequence_name,
+            # The matrices map the points as loaded, which for these crops were first
+            # turned from Y-up to Z-up (point_cloud_utils.correct_orientation)
+            "y_to_z_corrected_on_load": bool(
+                not self.orientation_corrected
+                and point_cloud_utils.needs_orientation_correction(sequence_name)
+            ),
+            "timepoints": [],
+        }
 
         # Convert numpy arrays to lists for JSON serialization
         for trans in transformations:
@@ -763,7 +747,7 @@ class PlantSequencesDataset(Dataset):
             T_neg_c[:3, 3] = -orig_c
 
             T_R = np.eye(4, dtype=np.float64)
-            T_R[:3, :3] = R.T  # Transpose for row vectors
+            T_R[:3, :3] = R  # p @ R.T for row vectors is R @ p for these column vectors
 
             T_c_plus_t = np.eye(4, dtype=np.float64)
             T_c_plus_t[:3, 3] = ref_c + t + v_shift
