@@ -98,7 +98,7 @@ We provide PyTorch Dataset classes for loading the TrackPlant3D dataset:
 - `PlantSequencesDataset`: Load plants as temporal sequences
 - `LeafSequencesDataset`: Load individual leaves as temporal sequences with optional PCA-based alignment
 
-These two classes, together with `plant_shape_analysis.dataloaders.normal_estimation.estimate_normals_for_point_cloud`, are the **supported public API**: they are what downstream projects import ([GrowFields](https://github.com/Joaquin-Gajardo/growfields), CanFields), so changes to them are breaking changes. The rest of `src/` is research code — usable, but not a stable interface.
+These two classes are the **supported public API**: they are what downstream projects import ([GrowFields](https://github.com/Joaquin-Gajardo/growfields), CanFields), so changes to them are breaking changes. The rest of `src/` is research code — usable, but not a stable interface.
 
 Example usage:
 ```python
